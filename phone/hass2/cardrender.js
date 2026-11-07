@@ -968,9 +968,9 @@ function drawMediaPlayer(ctx, config, state, allStates) {
       { weight: '400', color: DIM, align: 'right' });
   }
 
-  /* Footer: source or app, when the card has room and the info exists. */
-  const footer = (typeof attrs.app_name === 'string' && attrs.app_name.trim())
-    || (typeof attrs.source === 'string' && attrs.source.trim()) || '';
+  /* Footer: app name only. `source` is often an integration label such as
+   * "Music Assistant Queue" that says nothing about the track, so it stays out. */
+  const footer = (typeof attrs.app_name === 'string' && attrs.app_name.trim()) || '';
   if (footer) {
     const footerY = CARD_HEIGHT - 130;
     drawText(ctx, footer, left, footerY, contentW, 18, { weight: '400', color: DIM });

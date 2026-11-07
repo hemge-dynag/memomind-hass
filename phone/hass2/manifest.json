@@ -1,7 +1,7 @@
 {
   "id": "com.dynag.hass2.phone",
   "name": "HASS 2",
-  "version": "1.0.28",
+  "version": "1.0.29",
   "entry": "index.html",
   "bridgeVersion": "2.0",
   "permissions": [
@@ -58,16 +58,16 @@
   "schemaVersion": 2,
   "permissionPolicyVersion": 1,
   "files": {
-    "cardrender.js": "9ad8620fb68f8491d5dbce803991351b0634edffebe8cc06bc54fe9623deb2d9",
-    "display.js": "4c5da3b44118a9d59d68d497d6d758a7cf150b3a713d571cf2e182bc625e0daa",
-    "ha.js": "883ec6c6ee99f3da7026ab9e738260d75e24d35dee48ebb39c1b8b0c897ccf92",
-    "icons.js": "ad2ebea8661baccb90ddd296c297b5304619ef673917d11be7e096c3304b7bc2",
-    "index.html": "5a4abad0fd722c14724dfa9962fd2315c712605b7100a4193e55823e1a513ca3",
-    "plugin.js": "99ffd0a45a606382949b107a5a8315b10587428adfce9e68813cd9cb635265ba",
-    "protocol.js": "693ecd4cfef9ee4eeb428f0774721dbf0005b85b8033b923ff76a6a5e1331ded",
-    "style.css": "0109709c9324bdb8bcc261c406ed859f62f876fed6c2acd60df896dbbe3d86c7",
-    "translations.js": "5bbcc5e1bcea1240079ae0666fea9ba5d19825484d5f6d5145d2698886e00271",
-    "vendor/gm-plugin-web-sdk.esm.js": "bd2dc22691060bbf4d636f47467353afc78fbedfd29918f09d8b902680cf1816"
+    "cardrender.js": "sha256:6ae8515c6c8405da60b62e50ed437162765249f9b3ead3f3750ae5ec651303d1",
+    "display.js": "sha256:4c5da3b44118a9d59d68d497d6d758a7cf150b3a713d571cf2e182bc625e0daa",
+    "ha.js": "sha256:883ec6c6ee99f3da7026ab9e738260d75e24d35dee48ebb39c1b8b0c897ccf92",
+    "icons.js": "sha256:ad2ebea8661baccb90ddd296c297b5304619ef673917d11be7e096c3304b7bc2",
+    "index.html": "sha256:5a4abad0fd722c14724dfa9962fd2315c712605b7100a4193e55823e1a513ca3",
+    "plugin.js": "sha256:81bc3a9586f647e7684970cc9a014c035f8494d35eeb3349f8a947990672ca47",
+    "protocol.js": "sha256:eb7f3a413b8c2bccad198bb4304708a290bacc425d04048f5fb5449aa8096083",
+    "style.css": "sha256:0109709c9324bdb8bcc261c406ed859f62f876fed6c2acd60df896dbbe3d86c7",
+    "translations.js": "sha256:5bbcc5e1bcea1240079ae0666fea9ba5d19825484d5f6d5145d2698886e00271",
+    "vendor/gm-plugin-web-sdk.esm.js": "sha256:bd2dc22691060bbf4d636f47467353afc78fbedfd29918f09d8b902680cf1816"
   },
   "minPluginVersion": "15"
 }
