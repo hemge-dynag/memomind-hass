@@ -717,110 +717,157 @@ function drawMarkdown(ctx, config) {
   }
 }
 
-// HA's thermostat card: a tall vertical dial on the left with the target in
-// the middle and the set range underneath, the current temperature and the
-// action on the right. Everything is driven by the climate attributes
+// HA's thermostat card, redrawn to match the native Lovelace one: a 270-degree
+// open ring, the entity name centred on top, and inside the ring the action
+// line, the target temperature as the big number and the current reading as a
+// secondary line. The ring shows the whole scale as a dark track, the part from
+// min to the target as the coloured arc, the current temperature as a thin arc
+// and a dot at the target. Everything comes from the climate attributes
 // (temperature / current_temperature / min_temp / max_temp / hvac_action).
+const THERMO_START_DEG = 135;
+const THERMO_SWEEP_DEG = 270;
+
+function thermoAngle(ratio) {
+  return ((THERMO_START_DEG + THERMO_SWEEP_DEG * ratio) * Math.PI) / 180;
+}
+
 function drawThermostat(ctx, config, state, allStates, hassEntities) {
   // The climate attributes live on the entity's own state; fall back to the
   // card config or the entity list when the caller only forwarded a bare id.
   if (!state) state = stateOf(allStates, firstEntityId(config, hassEntities));
   const hvac = state;
   const attrs = hvac?.attributes || {};
-  /* The tile header names the entity; a climate card is always titled with its
-   * own name below the track's scale, so drawing it here too puts the entity
-   * name under the "max" label. Only a custom title still gets the header. */
-  const heading = typeof config?.title === 'string' && config.title.trim() ? config.title.trim() : '';
-  drawTitle(ctx, heading);
+
+  /* Title: Home Assistant centres the card name on top of the ring. A custom
+   * config name wins, then the entity's friendly_name. */
+  const customName = typeof config?.name === 'string' ? config.name.trim() : '';
+  const title = customName || (typeof attrs.friendly_name === 'string' ? attrs.friendly_name.trim() : '');
+  if (title) {
+    drawText(ctx, title, CARD_WIDTH / 2, 24, CARD_WIDTH - 72, 22,
+      { weight: '700', color: INK, align: 'center' });
+  }
 
   const unit = typeof attrs.temperature_unit === 'string' ? attrs.temperature_unit : '°C';
   const min = num(attrs.min_temp, 7);
   const max = num(attrs.max_temp, 30);
+  const span = max - min || 1;
   const targetValue = Number(attrs.temperature);
   const target = Number.isFinite(targetValue) ? targetValue : numericState(hvac);
   const current = Number(attrs.current_temperature);
-  const ratio = target === null ? 0 : Math.max(0, Math.min(1, (target - min) / (max - min || 1)));
+  const ratio = (value) => Math.max(0, Math.min(1, (value - min) / span));
+  const mode = String(hvac?.state || '').toLowerCase();
+  const active = mode !== 'off' && mode !== 'unavailable';
 
-  /* The dial sits in the left third only: it used to run 600-px-picture wide in
-   * the eye because the right column (name, 88 px number, action line) reached
-   * x=184 while the "min" label spanned 72..192 under it, so the scale read as
-   * crossed by the number. The track is narrowed and the labels are kept inside
-   * the dial's own column; the right column starts past it. */
-  const cx = 104;
-  const top = 72;
-  const bottom = CARD_HEIGHT - 74;
-  const thumbY = bottom - Math.round((bottom - top) * ratio);
+  /* Geometry: an open ring centred in the space under the title. */
+  const cx = CARD_WIDTH / 2;
+  const cy = 214;
+  const radius = 100;
+  const trackWidth = 22;
 
-  ctx.strokeStyle = TRACK;
-  ctx.lineWidth = 18;
+  // Full-scale track, drawn as an open ring with rounded caps.
   ctx.lineCap = 'round';
+  ctx.strokeStyle = TRACK;
+  ctx.lineWidth = trackWidth;
   ctx.beginPath();
-  ctx.moveTo(cx, top);
-  ctx.lineTo(cx, bottom);
+  ctx.arc(cx, cy, radius, thermoAngle(0), thermoAngle(1));
   ctx.stroke();
-  if (target !== null && ratio > 0) {
-    ctx.strokeStyle = INK;
+
+  if (active && target !== null) {
+    // Coloured arc from the minimum up to the target (HA tints this half way).
+    const to = ratio(target);
+    if (to > 0) {
+      ctx.strokeStyle = '#9a9a9a';
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, thermoAngle(0), thermoAngle(to));
+      ctx.stroke();
+    }
+    // Thin arc for the current temperature, lighter than the target arc.
+    if (Number.isFinite(current) && current >= min && current <= max) {
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      ctx.strokeStyle = MUTED;
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, thermoAngle(0), thermoAngle(ratio(current)));
+      ctx.stroke();
+      ctx.restore();
+    }
+    // Target dot: a filled knob sitting exactly on the ring.
+    const theta = thermoAngle(to);
+    ctx.fillStyle = INK;
     ctx.beginPath();
-    ctx.moveTo(cx, bottom);
-    ctx.lineTo(cx, thumbY);
-    ctx.stroke();
+    ctx.arc(cx + radius * Math.cos(theta), cy + radius * Math.sin(theta), 12, 0, Math.PI * 2);
+    ctx.fill();
   }
-  ctx.fillStyle = INK;
-  ctx.beginPath();
-  ctx.arc(cx, thumbY, 17, 0, Math.PI * 2);
-  ctx.fill();
 
-  drawText(ctx, `max ${Math.round(max)}`, cx, top - 10, 96, 16, { weight: '500', color: DIM, align: 'center', baseline: 'bottom' });
-  drawText(ctx, `min ${Math.round(min)}`, cx, bottom + 26, 96, 16, { weight: '500', color: DIM, align: 'center', baseline: 'top' });
+  /* Inside the ring, three stacked blocks: the action line, the target number
+   * with its unit, then the current reading. Sizes are chosen so the blocks fit
+   * the ring's inner width, which is narrowest at their own height, and the
+   * group is centred on the ring so nothing spills onto the track. */
+  const action = String(attrs.hvac_action || '').toLowerCase();
+  let label = '';
+  if (mode === 'off') label = 'Éteint';
+  else if (mode === 'unavailable') label = 'Indisponible';
+  else if (action) label = HA_ACTIONS[action] || action;
+  else if (mode) label = mode.charAt(0).toUpperCase() + mode.slice(1);
 
-  /* The right column is laid out top to bottom from measured block heights:
-   * name, then the target number with its unit, then the action line. The old
-   * fixed baselines put the name at 106, the 88 px number at 186 (descending to
-   * ~210) and the action at 238, whose ascenders reached back into the number's
-   * lower half. Each block now starts where the previous one actually ended. */
-  const colLeft = 208;
-  const colRight = CARD_WIDTH - 28;
-  const colW = colRight - colLeft;
-  const gap = 10;
-  let y = 84;
-  const name = config?.name || attrs.friendly_name || '';
-  if (name) {
-    const used = drawText(ctx, name, colLeft, y, colW, 22, { weight: '500', color: MUTED, baseline: 'top' });
-    y += Math.round(used * 1.3) + gap;
-  }
   const shown = target === null ? '—' : `${Math.round(target * 10) / 10}`;
-  const unitSize = 34;
-  /* The unit sits on the number's baseline, after its last glyph; the room the
-   * unit and the gap take is what the number has to fit into. */
+  const secondary = Number.isFinite(current)
+    ? `Actuel ${Math.round(current * 10) / 10}${unit}`
+    : '';
+
+  /* Keep the text well inside the ring: the widest block sits near the middle,
+   * where the circle is widest (2 * radius - trackWidth = 178 px), so a 40 px
+   * total inset leaves a visible gap on either side instead of the glyphs
+   * nearly grazing the track. */
+  const innerWidth = 2 * radius - trackWidth - 28;
+  const unitSize = 16;
   ctx.font = cardFont('400', unitSize);
   const unitW = Math.ceil(ctx.measureText(unit).width);
-  const numberRoom = Math.max(60, colW - unitW - 8);
-  ctx.font = `700 ${layoutFont(88)} ${FAMILY}`;
-  const numberW = ctx.measureText(shown).width;
-  const numSize = Math.max(40, Math.min(88, Math.floor((88 * numberRoom) / Math.max(1, numberW))));
-  ctx.font = `700 ${layoutFont(numSize)} ${FAMILY}`;
-  const numberWFinal = ctx.measureText(shown).width;
-  const numberH = Math.round(numSize * 0.74);
+  let numSize = 46;
+  ctx.font = cardFont('700', numSize);
+  let numberW = ctx.measureText(shown).width;
+  while (numSize > 20 && numberW + 6 + unitW > innerWidth) {
+    numSize -= 2;
+    ctx.font = cardFont('700', numSize);
+    numberW = ctx.measureText(shown).width;
+  }
+
+  const labelSize = 17;
+  const secondarySize = 17;
+  const gap = 10;
+  ctx.font = cardFont('500', labelSize);
+  const labelH = label ? Math.round(ctx.measureText('Hg').actualBoundingBoxAscent || labelSize * 1.3) : 0;
+  ctx.font = cardFont('500', secondarySize);
+  const secondaryH = secondary ? Math.round(ctx.measureText('Hg').actualBoundingBoxAscent || secondarySize * 1.3) : 0;
+  ctx.font = cardFont('700', numSize);
+  const numberH = Math.round(ctx.measureText('0123456789').actualBoundingBoxAscent || numSize * 1.4);
+
+  let blockH = numberH;
+  if (label) blockH += labelH + gap;
+  if (secondary) blockH += secondaryH + gap;
+  let y = cy - Math.round(blockH / 2);
+
+  if (label) {
+    drawText(ctx, label, cx, y + labelH, innerWidth, labelSize,
+      { weight: '500', color: active ? INK : MUTED, align: 'center', baseline: 'alphabetic', fixedBaseline: true });
+    y += labelH + gap;
+  }
+
+  const combinedW = numberW + 8 + unitW;
+  const numberX = cx - combinedW / 2;
   ctx.fillStyle = INK;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillText(shown, colLeft, y + numberH);
-  drawText(ctx, unit, colLeft + numberWFinal + 8, y + numberH, colW - numberWFinal - 8, unitSize,
-    { weight: '400', color: MUTED, baseline: 'bottom' });
+  ctx.font = cardFont('700', numSize);
+  ctx.fillText(shown, numberX, y + numberH);
+  drawText(ctx, unit, numberX + numberW + 8, y + numberH, unitW + 24, unitSize,
+    { weight: '400', color: MUTED, baseline: 'alphabetic', fixedBaseline: true });
   y += numberH + gap;
 
-  const bits = [];
-  if (Number.isFinite(current)) bits.push(`actuel ${Math.round(current * 10) / 10}${unit}`);
-  const action = String(attrs.hvac_action || '').toLowerCase();
-  if (action && action !== 'idle' && action !== 'off') {
-    bits.push(HA_ACTIONS[action] || action);
-  } else if (String(hvac?.state || '').toLowerCase() === 'off') {
-    bits.push('Éteint');
-  }
-  if (bits.length) {
-    drawText(ctx, bits.join('  ·  '), colLeft, y, colW, 24, {
-      weight: '500', color: MUTED, baseline: 'top',
-    });
+  if (secondary) {
+    drawText(ctx, secondary, cx, y + secondaryH, innerWidth, secondarySize,
+      { weight: '500', color: MUTED, align: 'center', baseline: 'alphabetic', fixedBaseline: true });
   }
 }
 
