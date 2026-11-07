@@ -763,7 +763,7 @@ function drawThermostat(ctx, config, state, allStates, hassEntities) {
    * thin so the numbers, not the ring, carry the weight. */
   const cx = CARD_WIDTH / 2;
   const cy = 200;
-  const radius = 132;
+  const radius = 150;
   const trackWidth = 11;
 
   // Full-scale track, drawn as an open ring with rounded caps.

@@ -1,7 +1,7 @@
 {
   "id": "com.dynag.hass2.phone",
   "name": "HASS 2",
-  "version": "1.0.31",
+  "version": "1.0.32",
   "entry": "index.html",
   "bridgeVersion": "2.0",
   "permissions": [
