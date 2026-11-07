@@ -1,0 +1,73 @@
+{
+  "id": "com.dynag.hass2.phone",
+  "name": "HASS 2",
+  "version": "1.0.27",
+  "entry": "index.html",
+  "bridgeVersion": "2.0",
+  "permissions": [
+    {
+      "name": "device.events",
+      "required": true,
+      "scope": {
+        "types": [
+          "connection",
+          "imuGesture"
+        ]
+      }
+    },
+    {
+      "name": "device.info",
+      "required": true
+    },
+    {
+      "name": "device.messaging",
+      "required": true,
+      "scope": {
+        "channels": [
+          19024,
+          19025,
+          19026,
+          19028
+        ]
+      }
+    },
+    {
+      "name": "display",
+      "required": true
+    },
+    {
+      "name": "network",
+      "required": true
+    },
+    {
+      "name": "storage",
+      "required": true
+    }
+  ],
+  "deviceRequirements": {
+    "preferredPluginId": "com.dynag.hass.glass",
+    "requiredPluginId": "com.dynag.hass.glass",
+    "minPluginVersion": "14",
+    "protocols": [
+      {
+        "id": "gm.hass",
+        "minVersion": "1.0"
+      }
+    ]
+  },
+  "schemaVersion": 2,
+  "permissionPolicyVersion": 1,
+  "files": {
+    "cardrender.js": "9ad8620fb68f8491d5dbce803991351b0634edffebe8cc06bc54fe9623deb2d9",
+    "display.js": "4c5da3b44118a9d59d68d497d6d758a7cf150b3a713d571cf2e182bc625e0daa",
+    "ha.js": "883ec6c6ee99f3da7026ab9e738260d75e24d35dee48ebb39c1b8b0c897ccf92",
+    "icons.js": "ad2ebea8661baccb90ddd296c297b5304619ef673917d11be7e096c3304b7bc2",
+    "index.html": "5a4abad0fd722c14724dfa9962fd2315c712605b7100a4193e55823e1a513ca3",
+    "plugin.js": "99ffd0a45a606382949b107a5a8315b10587428adfce9e68813cd9cb635265ba",
+    "protocol.js": "693ecd4cfef9ee4eeb428f0774721dbf0005b85b8033b923ff76a6a5e1331ded",
+    "style.css": "0109709c9324bdb8bcc261c406ed859f62f876fed6c2acd60df896dbbe3d86c7",
+    "translations.js": "5bbcc5e1bcea1240079ae0666fea9ba5d19825484d5f6d5145d2698886e00271",
+    "vendor/gm-plugin-web-sdk.esm.js": "bd2dc22691060bbf4d636f47467353afc78fbedfd29918f09d8b902680cf1816"
+  },
+  "minPluginVersion": "14"
+}

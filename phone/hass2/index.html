@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+    <meta name="theme-color" content="#0b0e14">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src http: https: ws: wss:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+    <title>HASS</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <h1 id="app-title">HASS</h1>
+      <button type="button" id="settings-button" class="ghost small" hidden>Réglages</button>
+    </header>
+
+    <main>
+      <!-- Main screen: connection state + sync on top, then the cards. -->
+      <section id="main-screen">
+        <div class="topbar">
+          <span id="status" class="status">Démarrage…</span>
+          <button type="button" id="sync-button">Synchroniser</button>
+        </div>
+        <p id="gesture-debug" class="gesture-debug" hidden>GESTE BRUT : —</p>
+
+        <!-- Debug: head gestures are off, so pages are driven from here. -->
+        <section id="nav-section" class="nav-panel">
+          <div class="cards-header">
+            <h2 id="nav-title" class="column-title">Navigation lunettes</h2>
+          </div>
+          <p id="nav-hint" class="hint"></p>
+          <div class="nav-row">
+            <button type="button" id="nav-prev" class="nav-btn">◀ Page précédente</button>
+            <button type="button" id="nav-next" class="nav-btn">Page suivante ▶</button>
+          </div>
+          <div class="nav-row">
+            <button type="button" id="nav-up" class="nav-btn ghost">▲ Haut</button>
+            <button type="button" id="nav-down" class="nav-btn ghost">▼ Bas</button>
+            <button type="button" id="nav-activate" class="nav-btn ghost">Action</button>
+          </div>
+          <p id="nav-state" class="hint"></p>
+        </section>
+
+        <section class="dashboards">
+          <div class="cards-header">
+            <h2 id="dashboards-title" class="column-title">Dashboard Home Assistant</h2>
+            <button type="button" id="refresh-dashboards-button" class="small ghost">Actualiser</button>
+          </div>
+          <p id="dashboards-hint" class="hint"></p>
+          <div id="dashboards-list" class="dashboards-list"></div>
+        </section>
+
+        <section class="cards">
+          <div class="cards-header">
+            <h2 id="cards-title" class="column-title">Cartes</h2>
+            <button type="button" id="add-card-button" class="small">Ajouter une carte</button>
+          </div>
+          <p id="cards-hint" class="hint"></p>
+          <div id="cards-list" class="cards-list"></div>
+        </section>
+
+        <p id="glasses-hint" class="hint"></p>
+      </section>
+
+      <!-- Settings screen: URL, token, refresh delay, entity loading. -->
+      <section id="settings-screen" hidden>
+        <div class="settings-head">
+          <h2 id="settings-title" class="column-title">Réglages</h2>
+          <button type="button" id="back-button" class="ghost small">Retour</button>
+        </div>
+        <p id="settings-hint" class="hint"></p>
+
+        <form id="config-form" class="config-form">
+          <label class="field">
+            <span id="url-label">URL de Home Assistant</span>
+            <input id="ha-url" type="url" inputmode="url" autocomplete="off"
+                   placeholder="http://homeassistant.local:8123">
+          </label>
+
+          <label class="field">
+            <span id="token-label">Jeton d’accès longue durée</span>
+            <input id="ha-token" type="password" autocomplete="off">
+          </label>
+          <p id="token-hint" class="hint"></p>
+
+          <label class="field">
+            <span id="autorefresh-label">Délai d’actualisation (minutes)</span>
+            <input id="ha-autorefresh" type="number" min="1" max="1440" step="1" inputmode="numeric" value="10">
+          </label>
+          <p id="autorefresh-hint" class="hint"></p>
+
+          <div class="actions">
+            <button type="button" id="test-button">Tester la connexion</button>
+            <button type="button" id="load-button">Charger les entités</button>
+          </div>
+
+          <div class="actions actions-main">
+            <button type="submit" id="save-settings-button">Enregistrer</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script type="module" src="plugin.js"></script>
+  </body>
+</html>

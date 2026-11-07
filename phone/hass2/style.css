@@ -1,0 +1,541 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #0b0e14;
+  color: #f2f4f8;
+  font-family: system-ui, -apple-system, sans-serif;
+  padding: 16px;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+h1 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.status {
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #2a2f3a;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status.ready { background: #1f4d2e; color: #7fe3a0; }
+.status.error { background: #4d1f24; color: #f28b8b; }
+
+/* --- main screen ---------------------------------------------------------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.topbar .status { flex: 1; }
+
+.config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: #c5cbd6;
+}
+
+.field input[type="text"],
+.field input[type="url"],
+.field input[type="password"],
+.field input[type="number"] {
+  font: inherit;
+  background: #151a24;
+  color: inherit;
+  border: 1px solid #2a2f3a;
+  border-radius: 8px;
+  padding: 10px;
+  width: 100%;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+button {
+  font-size: 1rem;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: none;
+  background: #3a63f0;
+  color: white;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: #2a2f3a;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
+#test-button,
+#sync-button {
+  background: #2a2f3a;
+}
+
+button.ghost {
+  background: transparent;
+  border: 1px solid #2a2f3a;
+  color: #c5cbd6;
+}
+
+.hint {
+  font-size: 0.78rem;
+  color: #8891a0;
+  margin: -6px 0 0;
+}
+
+.column-title {
+  font-size: 0.9rem;
+  margin: 0;
+  color: #c5cbd6;
+}
+
+/* --- settings screen ------------------------------------------------------ */
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+#settings-hint { margin: 0 0 16px; }
+
+.actions-main { margin-top: 4px; }
+
+/* --- cards ---------------------------------------------------------------- */
+
+.cards { margin: 20px 0; }
+
+.cards-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.card {
+  border: 1px solid #2a2f3a;
+  border-radius: 10px;
+  background: #12161f;
+  overflow: hidden;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.drag-handle {
+  flex: none;
+  width: 1.4rem;
+  text-align: center;
+  color: #6b7280;
+  cursor: grab;
+  touch-action: none;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.drag-handle:active { cursor: grabbing; }
+
+[data-sort-item].dragging {
+  opacity: 0.55;
+}
+
+.card-head .card-chevron {
+  flex: none;
+  width: 1rem;
+  text-align: center;
+  color: #8891a0;
+  transition: transform 0.15s ease;
+}
+
+.card.open .card-head .card-chevron { transform: rotate(90deg); }
+
+.card-head .card-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-head .card-count {
+  flex: none;
+  font-size: 0.75rem;
+  color: #8891a0;
+}
+
+.card-body {
+  padding: 0 12px 12px;
+  border-top: 1px solid #1e2430;
+}
+
+.card-body .card-title-input {
+  font: inherit;
+  width: 100%;
+  background: #151a24;
+  color: inherit;
+  border: 1px solid #2a2f3a;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 12px 0 4px;
+}
+
+.entity-rows {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.entity-rows li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 0.84rem;
+  border-bottom: 1px solid #1e2430;
+}
+
+.entity-rows li:last-child { border-bottom: none; }
+
+.entity-rows .ent-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.entity-rows .ent-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.entity-rows .ent-edit input[type="text"] { width: 100%; }
+
+.entity-rows .ent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entity-rows .ent-id {
+  font-size: 0.72rem;
+  color: #8891a0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entity-rows input[type="text"] {
+  font: inherit;
+  flex: 1;
+  min-width: 0;
+  background: #151a24;
+  color: inherit;
+  border: 1px solid #2a2f3a;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.entity-rows .row-id {
+  font-size: 0.72rem;
+  color: #8891a0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: none;
+}
+
+button.remove {
+  background: transparent;
+  color: #f28b8b;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  flex: none;
+}
+
+.card-empty {
+  padding: 12px 0;
+  color: #8891a0;
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.add-box {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #1e2430;
+}
+
+.add-box .field { margin-bottom: 8px; }
+
+.add-search {
+  font: inherit;
+  width: 100%;
+  background: #151a24;
+  color: inherit;
+  border: 1px solid #2a2f3a;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.available-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #2a2f3a;
+  border-radius: 8px;
+  background: #151a24;
+}
+
+.available-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #1e2430;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.available-list li:last-child { border-bottom: none; }
+
+.available-list .ent-info { flex: 1; min-width: 0; }
+.available-list .ent-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.available-list .ent-id { display: block; font-size: 0.72rem; color: #8891a0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.available-list .add-plus { flex: none; color: #7fe3a0; font-size: 1.1rem; }
+
+button.small {
+  font-size: 0.82rem;
+  padding: 7px 12px;
+}
+
+button.danger {
+  background: #4d1f24;
+  color: #f28b8b;
+}
+
+/* --- icons ---------------------------------------------------------------- */
+
+/* Inline SVG glyph sitting before an entity name. Follows the text colour so it
+ * reads on both the card background and the selected-row highlight. */
+.ent-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #9fb0c8;
+}
+
+.entity-rows li > .ent-icon { order: -1; }
+.available-list li > .ent-icon { color: #8fa1ba; }
+
+.icon-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  background: #151a24;
+  border: 1px solid #2a2f3a;
+  border-radius: 8px;
+  color: #d7e0ec;
+}
+
+.icon-button.auto { border-style: dashed; color: #7f8a99; }
+
+.icon-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 14, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 50;
+}
+
+.icon-picker-overlay[hidden] { display: none; }
+
+.icon-picker {
+  width: 100%;
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: #10141c;
+  border: 1px solid #2a2f3a;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.icon-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.icon-picker-head h3 { margin: 0; font-size: 1rem; }
+
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.icon-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: 0;
+  background: #151a24;
+  border: 1px solid #2a2f3a;
+  border-radius: 10px;
+  color: #c9d4e2;
+}
+
+.icon-cell.selected {
+  border-color: #5b9cff;
+  box-shadow: inset 0 0 0 1px #5b9cff;
+  color: #8fc0ff;
+}
+
+.icon-auto { font-size: 0.9rem; font-weight: 600; color: #8f9aab; }
+
+/* --- dashboards from the Home Assistant integration ---------------------- */
+
+.dashboards { margin: 20px 0; }
+
+.dashboards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.dashboard-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #2a2f3a;
+  border-radius: 10px;
+  background: #12161f;
+  cursor: pointer;
+}
+
+.dashboard-option.active {
+  border-color: #5aa9ff;
+  box-shadow: 0 0 0 1px #5aa9ff inset;
+}
+
+.dashboard-option input { margin: 0; }
+
+.dashboard-option .dashboard-name { flex: 1; font-weight: 600; }
+
+.dashboard-option .dashboard-meta { color: #8a93a6; font-size: 0.85em; }
+
+/* --- debug navigation panel ----------------------------------------------- */
+
+.nav-panel {
+  margin: 0 0 20px;
+  padding: 12px;
+  border: 1px solid #2a2f3a;
+  border-radius: 12px;
+  background: #12161f;
+}
+
+.nav-row {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 0;
+  flex-wrap: wrap;
+}
+
+button.nav-btn {
+  flex: 1 1 0;
+  min-width: 120px;
+  min-height: 44px;
+  font-size: 0.9rem;
+}
+
+#nav-state { margin: 8px 0 0; }
+
+/* Diagnostic 1.0.16: the raw gesture id the glasses report, shown big enough
+ * to read at arm's length while testing on real hardware. */
+.gesture-debug {
+  margin: 8px 0 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #1a2a44;
+  color: #cfe3ff;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+.gesture-debug.hit { background: #24406b; color: #ffffff; }

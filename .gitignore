@@ -1,0 +1,4 @@
+# Build outputs are committed on purpose (prebuilt .gmp / .mmpkg).
+*.zip
+.DS_Store
+node_modules/
