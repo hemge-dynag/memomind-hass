@@ -27,11 +27,16 @@ export const EVENT_REQUEST_CARD = 3;
  * [version, EVENT_SCROLL, page, delta] with delta a signed byte (-1 up, +1
  * down). The phone re-renders that card one row further and pushes it. */
 export const EVENT_SCROLL = 4;
-/* The glasses' primary button on a card picture: [version, EVENT_CARD_ACTIVATE].
- * The card's actionable entities live only on the phone, so the glasses cannot
- * name one; they say "trigger the entity the phone currently focuses" and the
- * phone runs callAction on it. */
+/* The glasses' primary button on a card picture: [version, EVENT_CARD_ACTIVATE,
+ * page, action]. The card's actionable entities live only on the phone, so the
+ * glasses cannot name one; they say "trigger the entity the phone currently
+ * focuses" and the phone runs callAction on it. `action` (1.0.28+) tells a
+ * plain press (1) from a double press (2): on a media player the double press
+ * toggles playback while a plain press keeps stepping the entity ring. An
+ * older glasses build sends no fourth byte; decodeEvent treats that as 1. */
 export const EVENT_CARD_ACTIVATE = 6;
+export const CARD_ACTIVATE_SINGLE = 1;
+export const CARD_ACTIVATE_DOUBLE = 2;
 /* Head up/down on a card picture: [version, EVENT_CARD_FOCUS, page, delta] with
  * delta a signed byte (-1 up, +1 down). The entity ring lives on the phone (it
  * holds the entity list), so the glasses only report the step and the phone
@@ -153,6 +158,7 @@ export function encodeClear() {
 // [version, event, page_index, offset]    -> { type: 'request-card', index, offset }
 // [version, event, page_index, delta]     -> { type: 'scroll-card', index, delta }
 // [version, event, page_index, delta]     -> { type: 'card-focus', index, delta }
+// [version, event, page, action]          -> { type: 'card-activate', index, action }
 export function decodeEvent(data) {
   if (!data || data.length < 3 || data[0] !== PROTOCOL_VERSION) return null;
   if (data[1] === EVENT_PAGE_CHANGED) return { type: 'page-changed', index: data[2] };
@@ -172,7 +178,10 @@ export function decodeEvent(data) {
     const action = new TextDecoder().decode(data.subarray(3, 3 + len));
     return { type: 'action', action };
   }
-  if (data[1] === EVENT_CARD_ACTIVATE) return { type: 'card-activate' };
+  if (data[1] === EVENT_CARD_ACTIVATE) {
+    const action = data.length > 3 ? data[3] : CARD_ACTIVATE_SINGLE;
+    return { type: 'card-activate', index: data[2], action };
+  }
   if (data[1] === EVENT_CARD_FOCUS || data[1] === EVENT_CARD_FOCUS_LEGACY) {
     if (data.length < 4) return null;
     const delta = data[3] > 127 ? data[3] - 256 : data[3];

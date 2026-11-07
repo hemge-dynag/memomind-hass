@@ -1,7 +1,7 @@
 {
   "id": "com.dynag.hass.glass",
   "name": "GM HASS",
-  "version": 14,
+  "version": 15,
   "abi_version": 256,
   "provides": {
     "protocols": [

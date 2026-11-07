@@ -1314,11 +1314,18 @@ function focusHeaderCard(index, delta) {
 }
 
 /* Runs the action for the entity under the ring. Shared by the phone's Action
- * button and the glasses' primary button (which sends EVENT_CARD_ACTIVATE). */
-async function activateFocus() {
+ * button and the glasses' primary button (which sends EVENT_CARD_ACTIVATE).
+ * A double press on a media player toggles playback (media_play_pause), as on
+ * HA's own media card; any other press runs the entity's normal action. */
+async function activateFocus(action = 1) {
   const card = currentCard();
   const entityId = focusedEntity(card);
   if (!entityId) { setStatus(S.navNoAction, 'error'); return; }
+  const domain = String(entityId).split('.')[0];
+  if (action === 2 && domain === 'media_player') {
+    await onAction(entityId, { service: 'media_player.media_play_pause' });
+    return;
+  }
   await onAction(entityId, focusedAction(card));
 }
 
@@ -1942,8 +1949,10 @@ const offMessages = gm.plugin.onMessage((message) => {
   if (event.type === 'request-card') requestCardImage(event.index, false, event.offset ?? null);
   if (event.type === 'scroll-card') scrollCardImage(event.index, event.delta);
   /* The glasses' primary button on a card picture: trigger the entity the phone
-   * focuses. The glasses cannot name it, the cursor lives here. */
-  if (event.type === 'card-activate') void activateFocus();
+   * focuses. The glasses cannot name it, the cursor lives here. The event
+   * carries the press kind: on a media player a double press toggles playback,
+   * everything else (and a plain press) runs the entity's normal action. */
+  if (event.type === 'card-activate') void activateFocus(event.action);
   /* A head up/down on a card picture steps the entity ring: the cursor lives
    * here, so the phone moves it and repaints just that card. The glasses name
    * the page they are on so a stale message cannot move another card. */

@@ -856,6 +856,127 @@ function drawSensor(ctx, config, state) {
   if (unit) drawText(ctx, unit, CARD_WIDTH / 2, 218 + used * 0.9, 200, 28, { weight: '400', color: MUTED, align: 'center' });
 }
 
+/* Media player card, laid out like HA's own media-control tile: the device name
+ * and a play/pause glyph on top, what is playing (media_title, then artist and
+ * album) in the middle, a progress bar with elapsed/total time, and the source
+ * or app at the bottom. A double press toggles playback (see plugin.js); the
+ * card only reports state, it never draws the cover art (deferred). */
+function formatClock(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+function drawPlayPause(ctx, x, y, size, playing, color) {
+  ctx.save();
+  ctx.fillStyle = color;
+  if (playing) {
+    const barW = Math.round(size * 0.28);
+    const gap = Math.round(size * 0.16);
+    const barH = Math.round(size * 0.9);
+    const left = x + Math.round((size - (barW * 2 + gap)) / 2);
+    const top = y + Math.round((size - barH) / 2);
+    ctx.fillRect(left, top, barW, barH);
+    ctx.fillRect(left + barW + gap, top, barW, barH);
+  } else {
+    const pad = Math.round(size * 0.08);
+    ctx.beginPath();
+    ctx.moveTo(x + pad, y);
+    ctx.lineTo(x + size - pad, y + size / 2);
+    ctx.lineTo(x + pad, y + size);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawMediaPlayer(ctx, config, state, allStates) {
+  drawTitle(ctx, titleOf(config));
+  const entityId = String(config?.entity || firstEntityId(config, null) || '');
+  const media = stateOf(allStates, entityId) || state;
+  const attrs = media?.attributes || {};
+  const raw = String(media?.state || '').toLowerCase();
+  const playing = raw === 'playing';
+  const idle = !raw || raw === 'off' || raw === 'unavailable' || raw === 'unknown';
+
+  const left = 40;
+  const right = CARD_WIDTH - 40;
+  const contentW = right - left;
+
+  /* Header: device name on the left, play/pause glyph on the right. The glyph
+   * mirrors the state so the wearer sees at a glance whether a double press
+   * would resume or pause. */
+  const name = tileLabel(config, media, entityId);
+  const headerY = titleOf(config) ? 78 : 50;
+  const glyph = 30;
+  if (name) {
+    drawText(ctx, name, left, headerY, contentW - glyph - 16, 24, { weight: '500', color: MUTED });
+  }
+  drawPlayPause(ctx, right - glyph, headerY - glyph + 4, glyph, playing, idle ? DIM : INK);
+
+  if (idle) {
+    drawText(ctx, stateLabel(raw || 'off'), CARD_WIDTH / 2, 210, contentW, 40,
+      { weight: '600', color: MUTED, align: 'center' });
+    return;
+  }
+
+  /* What is playing: title first, big; artist and album underneath as one or
+   * two secondary lines. Missing attributes simply drop out. */
+  const title = typeof attrs.media_title === 'string' ? attrs.media_title.trim() : '';
+  const artist = typeof attrs.media_artist === 'string' ? attrs.media_artist.trim() : '';
+  const album = typeof attrs.media_album_name === 'string' ? attrs.media_album_name.trim() : '';
+  const subtitle = [artist, album && album !== artist ? album : ''].filter(Boolean).join('  ·  ');
+
+  let cursor = Math.max(headerY + 34, 120);
+  if (title) {
+    const tSize = fitSize(ctx, title, contentW, 46, '700');
+    drawText(ctx, title, left, cursor, contentW, tSize, { weight: '700', color: INK });
+    cursor += Math.round(cardRunAscent(ctx, title, tSize, '700') + 22);
+  }
+  if (subtitle) {
+    const sSize = fitSize(ctx, subtitle, contentW, 26, '500');
+    drawText(ctx, subtitle, left, cursor, contentW, sSize, { weight: '500', color: MUTED });
+    cursor += Math.round(cardRunAscent(ctx, subtitle, sSize, '500') + 18);
+  }
+
+  /* Progress: prefer HA's media_duration/media_position, advancing the position
+   * by the time elapsed since media_position_updated_at when playing. */
+  const duration = Number(attrs.media_duration);
+  let position = Number(attrs.media_position);
+  const updatedAt = attrs.media_position_updated_at;
+  if (playing && Number.isFinite(position) && updatedAt) {
+    const since = (Date.now() - Date.parse(updatedAt)) / 1000;
+    if (Number.isFinite(since) && since > 0) position += since;
+  }
+  const hasProgress = Number.isFinite(duration) && duration > 0 && Number.isFinite(position);
+
+  const barY = Math.max(cursor + 8, 268);
+  if (hasProgress) {
+    const clamped = Math.max(0, Math.min(position, duration));
+    const ratio = clamped / duration;
+    ctx.fillStyle = TRACK;
+    roundRect(ctx, left, barY, contentW, 8, 4);
+    ctx.fill();
+    if (ratio > 0) {
+      ctx.fillStyle = playing ? INK : MUTED;
+      roundRect(ctx, left, barY, Math.max(8, Math.round(contentW * ratio)), 8, 4);
+      ctx.fill();
+    }
+    drawText(ctx, formatClock(clamped), left, barY + 30, contentW / 2, 18, { weight: '400', color: DIM });
+    drawText(ctx, formatClock(duration), right, barY + 30, contentW / 2, 18,
+      { weight: '400', color: DIM, align: 'right' });
+  }
+
+  /* Footer: source or app, when the card has room and the info exists. */
+  const footer = (typeof attrs.app_name === 'string' && attrs.app_name.trim())
+    || (typeof attrs.source === 'string' && attrs.source.trim()) || '';
+  if (footer) {
+    const footerY = CARD_HEIGHT - 130;
+    drawText(ctx, footer, left, footerY, contentW, 18, { weight: '400', color: DIM });
+  }
+}
+
 // Weather conditions arrive as HA enum words ("rainy", "partlycloudy", ...).
 const WEATHER_WORDS = {
   clear: 'Dégagé', sunny: 'Ensoleillé', cloudy: 'Nuageux', partlycloudy: 'Peu nuageux',
@@ -2123,6 +2244,11 @@ function drawCard(ctx, rawCard, states, box = null, scroll = 0, focusId = '') {
     case 'sensor':
     case 'entity':
       drawSensor(ctx, merged, state);
+      break;
+    case 'media-control':
+    case 'media_player':
+    case 'media-player':
+      drawMediaPlayer(ctx, merged, state, states);
       break;
     case 'entities':
       drawEntityGrid(ctx, merged, states, card?.entities, focusId);

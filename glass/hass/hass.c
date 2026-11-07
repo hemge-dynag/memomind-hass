@@ -393,16 +393,23 @@ static void request_card_focus(int8_t delta)
 
 /* Asks the phone to fire the action of the entity focused on the card picture
  * on screen. The phone holds the entity list and the HA token; the glasses
- * only name the page so a stale message cannot fire on another card. */
-static void request_card_activate(void)
+ * only name the page so a stale message cannot fire on another card. The
+ * `action` byte tells a plain press (1) from a double press (2), so the phone
+ * can map them differently: on a media player the plain press keeps stepping
+ * the entity ring while the double press toggles playback. */
+#define CARD_ACTIVATE_SINGLE UINT8_C(1)
+#define CARD_ACTIVATE_DOUBLE UINT8_C(2)
+static void request_card_activate(uint8_t action)
 {
-    uint8_t payload[3];
+    uint8_t payload[4];
 
     if (hass.page_count == 0U || !hass_pages[hass.page_index].image) return;
     payload[0] = PROTOCOL_VERSION;
     payload[1] = EVENT_CARD_ACTIVATE;
     payload[2] = (uint8_t)(hass.page_index & 0xFFU);
-    hass.host->log("hass: activate_card page=%u", (unsigned int)hass.page_index);
+    payload[3] = action;
+    hass.host->log("hass: activate_card page=%u action=%u",
+                   (unsigned int)hass.page_index, (unsigned int)action);
     (void)hass.host->bt_send(EVENT_CHANNEL, payload, sizeof(payload));
 }
 
@@ -1803,7 +1810,7 @@ static bool hass_event(void *context, const gm_plugin_event_t *event)
         }
         if (event->data.button.action == GM_PLUGIN_BUTTON_ACTION_DOUBLE) {
             if (hass_pages[hass.page_index].image) {
-                request_card_activate();
+                request_card_activate(CARD_ACTIVATE_DOUBLE);
                 send_page_changed();
                 return true;
             }
