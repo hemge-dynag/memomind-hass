@@ -743,7 +743,7 @@ function drawThermostat(ctx, config, state, allStates, hassEntities) {
   const customName = typeof config?.name === 'string' ? config.name.trim() : '';
   const title = customName || (typeof attrs.friendly_name === 'string' ? attrs.friendly_name.trim() : '');
   if (title) {
-    drawText(ctx, title, CARD_WIDTH / 2, 24, CARD_WIDTH - 72, 22,
+    drawText(ctx, title, CARD_WIDTH / 2, 20, CARD_WIDTH - 120, 11,
       { weight: '700', color: INK, align: 'center' });
   }
 
@@ -758,11 +758,13 @@ function drawThermostat(ctx, config, state, allStates, hassEntities) {
   const mode = String(hvac?.state || '').toLowerCase();
   const active = mode !== 'off' && mode !== 'unavailable';
 
-  /* Geometry: an open ring centred in the space under the title. */
+  /* Geometry: an open ring centred in the space under the title. The ring is
+   * as large as the panel allows below the (small) title, and its track is
+   * thin so the numbers, not the ring, carry the weight. */
   const cx = CARD_WIDTH / 2;
-  const cy = 214;
-  const radius = 100;
-  const trackWidth = 22;
+  const cy = 200;
+  const radius = 132;
+  const trackWidth = 11;
 
   // Full-scale track, drawn as an open ring with rounded caps.
   ctx.lineCap = 'round';
@@ -786,7 +788,7 @@ function drawThermostat(ctx, config, state, allStates, hassEntities) {
       ctx.save();
       ctx.globalAlpha = 0.55;
       ctx.strokeStyle = MUTED;
-      ctx.lineWidth = 8;
+      ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.arc(cx, cy, radius, thermoAngle(0), thermoAngle(ratio(current)));
       ctx.stroke();
@@ -796,7 +798,7 @@ function drawThermostat(ctx, config, state, allStates, hassEntities) {
     const theta = thermoAngle(to);
     ctx.fillStyle = INK;
     ctx.beginPath();
-    ctx.arc(cx + radius * Math.cos(theta), cy + radius * Math.sin(theta), 12, 0, Math.PI * 2);
+    ctx.arc(cx + radius * Math.cos(theta), cy + radius * Math.sin(theta), 7, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -817,24 +819,24 @@ function drawThermostat(ctx, config, state, allStates, hassEntities) {
     : '';
 
   /* Keep the text well inside the ring: the widest block sits near the middle,
-   * where the circle is widest (2 * radius - trackWidth = 178 px), so a 40 px
-   * total inset leaves a visible gap on either side instead of the glyphs
-   * nearly grazing the track. */
-  const innerWidth = 2 * radius - trackWidth - 28;
-  const unitSize = 16;
+   * where the circle is widest (2 * radius - trackWidth), so a fixed inset
+   * leaves a visible gap on either side instead of the glyphs grazing the
+   * track. The bigger ring lets the numbers grow while keeping that gap. */
+  const innerWidth = 2 * radius - trackWidth - 32;
+  const unitSize = 20;
   ctx.font = cardFont('400', unitSize);
   const unitW = Math.ceil(ctx.measureText(unit).width);
-  let numSize = 46;
+  let numSize = 72;
   ctx.font = cardFont('700', numSize);
   let numberW = ctx.measureText(shown).width;
-  while (numSize > 20 && numberW + 6 + unitW > innerWidth) {
+  while (numSize > 24 && numberW + 6 + unitW > innerWidth) {
     numSize -= 2;
     ctx.font = cardFont('700', numSize);
     numberW = ctx.measureText(shown).width;
   }
 
-  const labelSize = 17;
-  const secondarySize = 17;
+  const labelSize = 19;
+  const secondarySize = 19;
   const gap = 10;
   ctx.font = cardFont('500', labelSize);
   const labelH = label ? Math.round(ctx.measureText('Hg').actualBoundingBoxAscent || labelSize * 1.3) : 0;
