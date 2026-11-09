@@ -1,4 +1,4 @@
-# MemoMind HASS 2
+# MemoMind HASS
 
 Paire MemoMind **téléphone + lunettes** pour afficher sur les lunettes les
 **dashboards composés dans Home Assistant** (Lovelace).
