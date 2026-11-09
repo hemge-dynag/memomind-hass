@@ -3,6 +3,12 @@
 Paire MemoMind **téléphone + lunettes** pour afficher sur les lunettes les
 **dashboards composés dans Home Assistant** (Lovelace).
 
+## Démonstration
+
+[![Vidéo de démonstration](https://img.shields.io/badge/Vid%C3%A9o-Hass.mp4-blue)](Hass.mp4)
+
+▶️ **[Voir la vidéo de démonstration (Hass.mp4)](Hass.mp4)**
+
 Cette version repart de zéro : elle ne réutilise plus l’ancienne app Home Assistant 1.0.1 (retirée du paquet). Elle a son **propre firmware lunettes**
 (`hass.gmp`, id `com.dynag.hass.glass`) et son **propre protocole**
 (`gm.hass` 1.0), sur des canaux distincts :
