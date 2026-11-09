@@ -380,6 +380,41 @@ function hasContent(card) {
   return childrenOf(card).some((child) => hasContent(child));
 }
 
+// A Lovelace "heading" card carries no data: it is a section label the wearer
+// placed above the card that follows it. Its text lives in `heading` (newer)
+// or `content` (older). Returns '' for anything else.
+function headingText(card) {
+  if (!card || typeof card !== 'object') return '';
+  if (String(card.type || '').toLowerCase() !== 'heading') return '';
+  const raw = card.heading ?? card.content ?? card.title;
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
+// Turns a section/view card list into the renderable cards, using any "heading"
+// card as the title of the card that immediately follows it (the way HA shows
+// it above that card) and dropping the heading itself. Without this the wearer
+// sees bare cards with no name at the top: the dashboard's own cards carry no
+// `name`, only the headings they placed above them.
+function cardsWithHeadings(list) {
+  const out = [];
+  let pendingTitle = '';
+  for (const card of Array.isArray(list) ? list : []) {
+    const heading = headingText(card);
+    if (heading) {
+      pendingTitle = heading;
+      continue;
+    }
+    if (!hasContent(card)) continue;
+    if (pendingTitle && !(typeof card.name === 'string' && card.name.trim())) {
+      out.push({ ...card, name: pendingTitle });
+    } else {
+      out.push(card);
+    }
+    pendingTitle = '';
+  }
+  return out;
+}
+
 // Views of the picked dashboard, each one a page of cards. Computed page/row
 // counts live on the object the settings list renders.
 export async function fetchLovelaceDashboard(baseUrl, token, urlPath) {
@@ -400,11 +435,10 @@ export async function fetchLovelaceDashboard(baseUrl, token, urlPath) {
   for (const view of config.views) {
     const cards = [];
     const viewCards = Array.isArray(view?.cards) ? view.cards : [];
-    for (const card of viewCards) if (hasContent(card)) cards.push(card);
+    for (const card of cardsWithHeadings(viewCards)) cards.push(card);
     const sections = Array.isArray(view?.sections) ? view.sections : [];
     for (const section of sections) {
-      const sectionCards = Array.isArray(section?.cards) ? section.cards : [];
-      for (const card of sectionCards) if (hasContent(card)) cards.push(card);
+      for (const card of cardsWithHeadings(section?.cards)) cards.push(card);
     }
     if (!cards.length) continue;
     pages.push({

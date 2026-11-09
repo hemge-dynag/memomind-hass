@@ -2224,11 +2224,23 @@ function drawStack(ctx, type, config, states, width, height, scroll = 0, focusId
    * rows drawn start at `scroll` (the first hidden row the wearer asked for)
    * and stop at the panel's bottom, so a long grid is read window by window. */
   const firstRow = Math.min(Math.max(Math.round(scroll) || 0, 0), layout.maxOffset);
+  /* A grid that a dashboard heading named carries that name as a real title
+   * band at the top, the way HA draws it above the board. Without it the tiles
+   * fill the panel from the first row and the heading the wearer placed above
+   * the grid was invisible. The band eats GUTTER+HEADER_GAP of height, and the
+   * cells below are sized on what is left so nothing overflows the panel. */
+  const title = titleOf(config);
+  const headerH = title ? HEADER_GAP + GUTTER : 0;
+  if (title) {
+    drawText(ctx, title, width / 2, GUTTER + 14, width - 32, 16,
+      { weight: '700', color: INK, align: 'center' });
+  }
   /* The board is always three rows tall: the cell height comes from the
    * reference grid, never from how many rows this card happens to hold. */
   const rows = layout.visible;
+  const boardH = height - headerH;
   const cellW = (width - GUTTER * (cols + 1)) / cols;
-  const cellH = (height - GUTTER * (VISIBLE_GRID_ROWS + 1)) / VISIBLE_GRID_ROWS;
+  const cellH = (boardH - GUTTER * (VISIBLE_GRID_ROWS + 1)) / VISIBLE_GRID_ROWS;
   /* One text size per card, and the same size on every card. Every grid uses
    * the same cell height, so a plain card is never scaled and the ceiling is
    * the target itself; the fit-to-screen step still compensates whenever a
@@ -2253,7 +2265,7 @@ function drawStack(ctx, type, config, states, width, height, scroll = 0, focusId
         index < children.length ? children[index] : null,
         states,
         GUTTER + col * (cellW + GUTTER),
-        GUTTER + row * (cellH + GUTTER),
+        headerH + GUTTER + row * (cellH + GUTTER),
         cellW,
         cellH,
         uniform,
