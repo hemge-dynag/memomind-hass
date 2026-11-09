@@ -493,9 +493,13 @@ function renderToCanvas(card, states, canvas, width, height, scroll = 0, focusId
   }
   const contentW = Math.max(1, Math.round(width * scale));
   const contentH = Math.round(bandHeight * scale);
-  /* Centre the picture inside the inset box so every side keeps (at least)
-   * FIT_MARGIN of black background. */
-  const yoff = Math.round(FIT_MARGIN + Math.max(0, (availH - contentH) / 2));
+  /* The picture sits at the top of the inset box (FIT_MARGIN of air above its
+   * first inked row) and only centres horizontally. Vertically centring a
+   * width-limited band left the card name floating somewhere in the middle of
+   * the panel with a black gap above it, so a short card (a one-line note, a
+   * bar tile) no longer reads its title at the top edge. Leftover height goes
+   * below the content, where it is invisible. */
+  const yoff = FIT_MARGIN;
   const xoff = Math.round(FIT_MARGIN + Math.max(0, (availW - contentW) / 2));
   const out = new Uint8Array(stride * height);
   for (let y = 0; y < height; y += 1) {
@@ -614,7 +618,7 @@ function num(value, fallback) {
 
 function drawTitle(ctx, title) {
   if (!title) return;
-  drawText(ctx, title, CARD_WIDTH / 2, 22, CARD_WIDTH - 64, 18,
+  drawText(ctx, title, CARD_WIDTH / 2, 22, CARD_WIDTH - 64, 16,
     { weight: '700', color: INK, align: 'center' });
 }
 
@@ -679,14 +683,18 @@ function drawBar(ctx, config, state) {
   const value = numericState(state);
   const ratio = value === null ? 0 : Math.max(0, Math.min(1, (value - min) / (max - min || 1)));
 
-  drawText(ctx, state?.attributes?.friendly_name || '', 40, 120, CARD_WIDTH - 80, 26, { weight: '500', color: MUTED });
+  /* Body stacked with the same gap logic as a graph card: name just under the
+   * title, the big value in the middle of the free space, the track low. The
+   * crop-to-ink + fit step reads this whole block, so the title stays at the
+   * top edge and the card fills the panel. */
+  drawText(ctx, state?.attributes?.friendly_name || '', 40, 34, CARD_WIDTH - 80, 26, { weight: '500', color: MUTED });
   const shown = value === null ? (state ? String(state.state) : '—') : String(value);
-  drawText(ctx, shown, 40, 220, 300, 64, { weight: '700' });
+  drawText(ctx, shown, 40, 152, 300, 64, { weight: '700' });
   const unit = unitOf(state);
-  if (unit) drawText(ctx, unit, 40 + 8, 220 - 10, 200, 26, { weight: '400', color: MUTED });
+  if (unit) drawText(ctx, unit, 46, 142, 200, 26, { weight: '400', color: MUTED });
 
   const x = 40;
-  const y = 262;
+  const y = 224;
   const w = CARD_WIDTH - 80;
   ctx.fillStyle = TRACK;
   roundRect(ctx, x, y, w, 16, 8);
@@ -707,14 +715,27 @@ function drawMarkdown(ctx, config) {
     .replace(/^#{1,6}\s*/gm, '')
     .replace(/[*_`>]/g, '')
     .trim();
-  const top = titleOf(config) ? 92 : 60;
+  /* Lines start just below the title band (title baseline 22) and the leading
+   * is stretched, within bounds, so the text block reaches down toward the
+   * panel bottom. The crop-to-ink + fit step then reads one tall block and
+   * keeps the title at the top; a short note with tight leading left the
+   * picture hugging the middle of the panel with the title floating far from
+   * the top edge. */
   const size = 26;
+  const title = titleOf(config);
   const lines = wrapLines(ctx, text, CARD_WIDTH - 96, size, '400');
+  const top = title ? 46 : 30;
+  const bottom = CARD_HEIGHT - 36;
+  const minLead = Math.round(size * 1.4);
+  const maxLead = Math.round(size * 1.8);
+  const lead = lines.length > 1
+    ? Math.max(minLead, Math.min(maxLead, Math.floor((bottom - top) / (lines.length - 1))))
+    : minLead;
   let y = top;
   for (const line of lines) {
     if (y > CARD_HEIGHT - 32) break;
     drawText(ctx, line, 48, y, CARD_WIDTH - 96, size, { weight: '400', color: INK });
-    y += Math.round(size * 1.4);
+    y += lead;
   }
 }
 
@@ -901,9 +922,9 @@ function drawSensor(ctx, config, state) {
       { weight: '500', color: MUTED });
   }
   const shown = state ? String(state.state) : '—';
-  const used = drawText(ctx, shown, CARD_WIDTH / 2, 218, CARD_WIDTH - 80, 96, { weight: '700', align: 'center' });
+  const used = drawText(ctx, shown, CARD_WIDTH / 2, 170, CARD_WIDTH - 80, 96, { weight: '700', align: 'center' });
   const unit = unitOf(state);
-  if (unit) drawText(ctx, unit, CARD_WIDTH / 2, 218 + used * 0.9, 200, 28, { weight: '400', color: MUTED, align: 'center' });
+  if (unit) drawText(ctx, unit, CARD_WIDTH / 2, 170 + used * 0.9, 200, 28, { weight: '400', color: MUTED, align: 'center' });
 }
 
 /* Media player card, laid out like HA's own media-control tile: the device name

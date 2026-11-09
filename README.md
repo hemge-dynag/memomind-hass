@@ -45,7 +45,7 @@ Les dashboards en mode *strategy* (ex. « Aperçu »/`lovelace`, config sans
 
 ```
 phone/hass2/                  sources de l'app téléphone (11 fichiers + vendor)
-builds/hass-1.0.29.mmpkg      paquet téléphone (minPluginVersion "15", gm.hass 1.0)
+builds/hass-1.0.40.mmpkg      paquet téléphone (minPluginVersion "15", gm.hass 1.0)
 builds/hass.mmpkg             alias du même paquet
 builds/hass.gmp               firmware lunettes (v15, abi 256, 23 152 o)
 ```
@@ -56,7 +56,7 @@ Téléphone, depuis un dossier source **propre** (exactement les 11 fichiers
 livrés — pas de `ha_icons.h`, pas de `plugin-host-shim.js`) :
 
 ```bash
-node <PhoneSDK>/tools/build-mmpkg.mjs phone/hass2 builds/hass-1.0.29.mmpkg
+node <PhoneSDK>/tools/build-mmpkg.mjs phone/hass2 builds/hass-1.0.40.mmpkg
 ```
 
 Lunettes, depuis `GlassSDK/` :
