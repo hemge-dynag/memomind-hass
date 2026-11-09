@@ -364,11 +364,16 @@ function leavesOf(card, out = []) {
   out.push(card);
   return out;
 }
+const GRAPH_TYPES = new Set(['statistics-graph', 'energy-usage-graph', 'history-graph', 'sensor-graph']);
 
 function hasContent(card) {
   if (!card || typeof card !== 'object') return false;
   const type = String(card.type || '').toLowerCase();
   if (type === 'heading' || type === 'glance') return false;
+  /* Graph cards draw their series from the recorder, not from a per-card
+   * entity: the Energy dashboard's card names none in its config at all, yet
+   * it still paints a chart. Keep it as content. */
+  if (GRAPH_TYPES.has(type)) return true;
   if (typeof card.entity === 'string' && card.entity.trim()) return true;
   if (Array.isArray(card.entities) && card.entities.length) return true;
   if (typeof card.content === 'string' && card.content.trim()) return true;
@@ -717,6 +722,348 @@ export function buildPages(pages, statesById, { maxRows = 32, resolveIcon = null
     const index = out.length;
     const title = page.title || `Card ${index + 1}`;
     out.push({ title, rows });
+  }
+  return out;
+}
+
+// --- history / statistics for graph cards ------------------------------------
+//
+// `history-graph`, `statistics-graph` and the Energy dashboard's
+// `energy-usage-graph` all paint a time series, which the card's own state can
+// never carry: the values live in HA's recorder, not in `/api/states`. The
+// graphs are therefore drawn from a plain series of numbers fetched here, and
+// that series rides with the card as `card.history` (see plugin.js) so
+// cardrender.js can paint it without touching the network.
+//
+// The recorder is read over REST (`/api/history/period`), which the sandboxed
+// webview does allow. The statistics websocket command
+// (`recorder/statistics_during_period`) is the better source for long ranges
+// (hourly/daily buckets instead of hundreds of raw points), so it is tried
+// first; when the socket is unavailable the REST history path is used instead.
+
+
+export function isGraphCardType(type) {
+  return GRAPH_TYPES.has(String(type || '').toLowerCase());
+}
+
+// Maps a Lovelace duration ("24h", "7d", "1h30m", "60") to hours. The graph
+// cards ask for `hours_to_show` (a number of hours) or a duration string on the
+// Energy card; both end up here so the window matches what the card asked for.
+function hoursOf(value) {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return 0;
+  const re = /(\d+(?:\.\d+)?)\s*(d|j|h|m|s)?/g;
+  let total = 0;
+  let match;
+  while ((match = re.exec(text))) {
+    const amount = Number(match[1]);
+    const unit = match[2] || 'h';
+    if (unit === 'd' || unit === 'j') total += amount * 24;
+    else if (unit === 'h') total += amount;
+    else if (unit === 'm') total += amount / 60;
+    else if (unit === 's') total += amount / 3600;
+  }
+  return total;
+}
+
+/* Time window a graph card asks for. HA's statistics-graph carries the span as
+ * `days_to_show` (a 30-day card says 30) or `hours_to_show`; the `period` key
+ * is a *bucket* name ("day", "hour", …), never a duration, so it must not be
+ * read as hours (reading "day" as a number yielded a 1-hour window and a 30-day
+ * card collapsed to an hour). A fixed `start_time`/`end_time` pair is honoured. */
+export function graphWindow(config) {
+  const daysToShow = Number(config?.days_to_show);
+  const hoursToShow = Number(config?.hours_to_show);
+  const durToShow = hoursOf(config?.hours_to_show);
+  let hours = 24;
+  if (Number.isFinite(daysToShow) && daysToShow > 0) hours = daysToShow * 24;
+  else if (durToShow) hours = durToShow;
+  else if (Number.isFinite(hoursToShow) && hoursToShow > 0) hours = hoursToShow;
+  /* Statistics graphs routinely span weeks or a month (the Energy card's
+   * 7-day view, a 30-day cost bar chart): keep the requested window rather
+   * than clipping it, so the axis and the bucket match the card. */
+  if (hours > 24 * 366) hours = 24 * 366;
+  const end = Date.now();
+  const start = end - hours * 3600 * 1000;
+  /* Bucket: honour the card's own `period` when it names a real statistics
+   * bucket; otherwise pick from the span (sub-hour for a couple of hours,
+   * hourly for two days, daily beyond) so a week renders seven columns and a
+   * month thirty. */
+  const askedPeriod = String(config?.period || config?.statistics?.period || '').toLowerCase();
+  const isBucket = /^(5minute|minute|hour|day|week|month)$/.test(askedPeriod);
+  const bucket = isBucket
+    ? askedPeriod
+    : (hours <= 2 ? '5minute' : hours <= 48 ? 'hour' : 'day');
+  return { start: new Date(start), end: new Date(end), hours, bucket };
+}
+
+// Entity ids a graph card draws: one `entity` (History graph's single line), an
+// `entities` list ("sensor.power" or { entity: ... }), or the Energy card's
+// `collection_key`/`stat_cfg` — which normally names none at all, so the caller
+// passes the energy sensors it found as `fallbackIds`.
+function graphEntityIds(config, fallbackIds = []) {
+  const ids = [];
+  const push = (value) => {
+    const id = typeof value === 'string' ? value : value?.entity ?? value?.stat_consumption;
+    if (typeof id === 'string' && id.trim() && !ids.includes(id.trim())) ids.push(id.trim());
+  };
+  const raw = config?.entity ?? config?.entities ?? config?.stat_cfg;
+  for (const item of Array.isArray(raw) ? raw : raw ? [raw] : []) push(item);
+  if (!ids.length) for (const id of fallbackIds || []) push(id);
+  return ids;
+}
+
+// Energy sensors to plot for an Energy card that names none: the same kind of
+// reading HA's Energy dashboard charts. Instantaneous power (W/kW) shows the
+// usage shape best, so power sensors are preferred; a card with only energy
+// meters falls back to the daily one (a monotonic weekly/monthly odometer draws
+// a near-flat rising line, the least useful graph). Unavailable readings are
+// skipped. At most two series, as the card has room for.
+export function energySensorIds(states) {
+  if (!states || typeof states.forEach !== 'function') return [];
+  const power = [];
+  const daily = [];
+  const energy = [];
+  for (const [id, state] of states) {
+    if (!id.startsWith('sensor.')) continue;
+    const raw = String(state?.state ?? '').toLowerCase();
+    if (!raw || raw === 'unavailable' || raw === 'unknown') continue;
+    const unit = String(state?.attributes?.unit_of_measurement || '').toLowerCase();
+    const cls = String(state?.attributes?.device_class || '').toLowerCase();
+    const isPower = cls === 'power' || ['w', 'kw'].includes(unit);
+    const isEnergy = cls === 'energy' || ['kwh', 'wh', 'mwh'].includes(unit);
+    if (isPower) power.push(id);
+    else if (isEnergy && /dai|jour/.test(id)) daily.push(id);
+    else if (isEnergy) energy.push(id);
+  }
+  return [...power, ...daily, ...energy].slice(0, 2);
+}
+
+function numericFromState(value) {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// Raw recorder history for one entity over the window, reduced to
+// `{ t, y }` points (ms epoch, number). `/api/history/period` answers with a
+// list of lists (one per entity id), oldest first.
+async function fetchHistoryPoints(baseUrl, token, id, window) {
+  const start = window.start.toISOString();
+  const end = window.end.toISOString();
+  const path = `/api/history/period/${encodeURIComponent(start)}`
+    + `?filter_entity_id=${encodeURIComponent(id)}`
+    + `&end_time=${encodeURIComponent(end)}`
+    + '&minimal_response&no_attributes';
+  let raw;
+  try {
+    raw = await haFetch(baseUrl, token, path, { timeoutMs: 12000 });
+  } catch (error) {
+    if (/HTTP 4\d\d/.test(String(error?.message || ''))) return [];
+    throw error;
+  }
+  const list = Array.isArray(raw) && Array.isArray(raw[0]) ? raw[0] : (Array.isArray(raw) ? raw : []);
+  const points = [];
+  for (const entry of list) {
+    if (!entry || typeof entry !== 'object') continue;
+    const y = numericFromState(entry.state);
+    const stamp = Date.parse(entry.last_changed || entry.last_updated || '');
+    if (y === null || !Number.isFinite(stamp)) continue;
+    points.push({ t: stamp, y });
+  }
+  return bucketize(points, window);
+}
+
+/* Raw recorder history is every state change (hundreds over a month), which a
+ * bar chart cannot show as one column each. Reduce the points into the card's
+ * statistics buckets (5minute/hour/day/week/month): each bucket keeps its last
+ * reading (the sampled `state`), so a 30-day daily card becomes 30 bars and a
+ * 24-hour hourly card 24, the same shape HA's statistics graph draws. Points
+ * already coarse enough (<= 1.5 buckets' worth) are kept as-is. */
+const BUCKET_MS = {
+  '5minute': 5 * 60 * 1000,
+  minute: 60 * 1000,
+  hour: 3600 * 1000,
+  day: 86400 * 1000,
+  week: 7 * 86400 * 1000,
+  month: 30 * 86400 * 1000,
+};
+
+function bucketize(points, window) {
+  if (points.length <= 2) return points;
+  const size = BUCKET_MS[window.bucket];
+  if (!size) return points;
+  const span = window.end - window.start;
+  const slots = Math.max(1, Math.round(span / size));
+  if (points.length <= slots * 1.5) return points;
+  const startMs = window.start.getTime();
+  const bySlot = new Map();
+  for (const p of points) {
+    const slot = Math.floor((p.t - startMs) / size);
+    if (slot < 0 || slot >= slots) continue;
+    bySlot.set(slot, p); // last reading in the slot wins
+  }
+  const out = [];
+  for (let i = 0; i < slots; i += 1) {
+    const p = bySlot.get(i);
+    if (p) out.push({ t: startMs + i * size + size / 2, y: p.y });
+  }
+  return out.length ? out : points;
+}
+
+// Statistics buckets for one entity, reduced to `{ t, y }` points. The
+// websocket returns `{ [entity_id]: [{ start, end, mean, min, max, state, sum }] }`;
+// the plotted value is the mean (the way HA's own statistics graph draws a
+// measurement) and, for a `total_increasing` meter (Energy's kWh sensors), the
+// summed change, so bars show consumption per bucket rather than a rising
+// odometer.
+function statisticsRowsToPoints(result, id) {
+  const rows = result && typeof result === 'object' ? (result[id] || []) : [];
+  if (!Array.isArray(rows)) return [];
+  const points = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    /* `recorder/statistics_during_period` answers `start`/`end` as epoch
+     * milliseconds (numbers), not ISO strings: `Date.parse(1791496800000)`
+     * is NaN, which silently dropped every row and left the card on the
+     * REST fallback (a handful of raw history points). Accept both shapes. */
+    const raw = row.start ?? row.end;
+    const t = typeof raw === 'number' ? raw
+      : (raw instanceof Date ? raw.getTime() : Date.parse(String(raw ?? '')));
+    const y = numericFromState(row.mean ?? row.state ?? row.max);
+    if (!Number.isFinite(t) || y === null) continue;
+    const change = numericFromState(row.change);
+    points.push({ t, y, change });
+  }
+  points.sort((a, b) => a.t - b.t);
+  return points;
+}
+
+async function statisticsRequest(baseUrl, token, id, start, end, bucket) {
+  return await withWebSocket(baseUrl, token, async (send) => {
+    return await send('recorder/statistics_during_period', {
+      start_time: start.toISOString(),
+      end_time: end.toISOString(),
+      statistic_ids: [id],
+      period: bucket,
+      types: ['mean', 'min', 'max', 'state', 'change'],
+    });
+  });
+}
+
+/* The last successful statistics answer per entity/window is kept on the phone
+ * so a transient websocket failure (or the host closing it mid-dashboard) does
+ * not drop a 30-day card back to the 10-day REST history — which is exactly
+ * what a card showing "10 bars, 29/10→08/11, some empty" looks like. */
+const STATS_CACHE_MS = 7 * 24 * 3600 * 1000;
+
+function statsCacheKey(id, window) {
+  const hours = Math.round((window.end - window.start) / 3600000);
+  return `ha-stats:${id}:${window.bucket}:${hours}`;
+}
+
+function readStatsCache(key) {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
+    if (!raw) return null;
+    const value = JSON.parse(raw);
+    if (!value || !Array.isArray(value.points) || !value.points.length) return null;
+    if (!Number.isFinite(value.at) || Date.now() - value.at > STATS_CACHE_MS) return null;
+    return value.points.filter((p) => p && Number.isFinite(p.t) && Number.isFinite(p.y));
+  } catch {
+    return null;
+  }
+}
+
+function writeStatsCache(key, points) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(key, JSON.stringify({ at: Date.now(), points }));
+  } catch { /* storage full or disabled: the cache is only an optimisation */ }
+}
+
+async function fetchStatisticsPoints(baseUrl, token, id, window) {
+  const key = statsCacheKey(id, window);
+  let points = [];
+  try {
+    points = statisticsRowsToPoints(
+      await statisticsRequest(baseUrl, token, id, window.start, window.end, window.bucket),
+      id,
+    );
+  } catch {
+    points = [];
+  }
+  /* A long range can be refused or cut short by the recorder; retry in
+   * smaller slices and stitch them together, oldest first. */
+  if (!points.length) {
+    try {
+      const sliceMs = 7 * 86400 * 1000;
+      const stitched = [];
+      for (let s = window.start.getTime(); s < window.end.getTime(); s += sliceMs) {
+        const e = Math.min(s + sliceMs, window.end.getTime());
+        stitched.push(...statisticsRowsToPoints(
+          await statisticsRequest(baseUrl, token, id, new Date(s), new Date(e), window.bucket),
+          id,
+        ));
+      }
+      if (stitched.length) points = stitched.sort((a, b) => a.t - b.t);
+    } catch {
+      points = [];
+    }
+  }
+  const cached = readStatsCache(key);
+  /* Fresh data wins, but never lose a longer history to a short answer:
+   * prefer whichever set covers more buckets. */
+  if (cached && cached.length > points.length) points = cached;
+  if (points.length) writeStatsCache(key, points);
+  return points;
+}
+
+/* Series for every entity a graph card draws, in card order, as
+ * [{ id, points: [{ t, y }] }]. A statistics/energy card uses the statistics
+ * websocket; a plain history graph, or any card whose instance refuses the
+ * socket, falls back to the recorder history REST endpoint. Failures are
+ * per-entity and never throw: a graph with one empty line still paints the
+ * other, and an all-empty graph is drawn as "no data" by cardrender. */
+export async function fetchCardSeries(baseUrl, token, config, type = '', fallbackIds = []) {
+  const ids = graphEntityIds(config, fallbackIds);
+  if (!ids.length) return [];
+  const wantStatistics = /statistics-graph|energy-usage-graph/.test(String(type || '').toLowerCase());
+  const window = graphWindow(config);
+  const out = [];
+  for (const id of ids.slice(0, 4)) {
+    let points = [];
+    if (wantStatistics) {
+      try {
+        points = await fetchStatisticsPoints(baseUrl, token, id, window);
+      } catch {
+        points = [];
+      }
+    }
+    if (!points.length) {
+      try {
+        points = await fetchHistoryPoints(baseUrl, token, id, window);
+      } catch {
+        points = [];
+      }
+    }
+    /* The raw history only reaches back as far as the recorder keeps it
+     * (10 days by default), so a short statistics answer plus a longer drawn
+     * history is stitched by bucket: statistics win on the days they cover. */
+    if (wantStatistics && points.length) {
+      try {
+        const history = await fetchHistoryPoints(baseUrl, token, id, window);
+        if (history.length > points.length) {
+          const bySlot = new Map();
+          for (const p of history) bySlot.set(p.t, p);
+          for (const p of points) bySlot.set(p.t, p);
+          const merged = [...bySlot.values()].sort((a, b) => a.t - b.t);
+          if (merged.length > points.length) points = merged;
+        }
+      } catch { /* the statistics answer stays as is */ }
+    }
+    out.push({ id, points });
   }
   return out;
 }

@@ -46,18 +46,13 @@ export const CARD_ACTIVATE_DOUBLE = 2;
  * NAV_FOCUS_DOWN, so a build-7 glasses' head-up event was decoded as a nav
  * command echo and dropped. */
 export const EVENT_CARD_FOCUS = 8;
-/* Diagnostic (1.0.16): the raw IMU gesture id the glasses received, sent on
- * every activation before any routing. [version, EVENT_DEBUG_GESTURE,
- * gesture, active, page]. The phone shows it so a head up/down that the Host
- * misclassified as left/right (id 7/8) can be told apart from a correct route
- * (id 2/3); its absence means an older plugin build is still running. */
-export const EVENT_DEBUG_GESTURE = 9;
 /* 7 used to carry head up/down on glasses builds 7 and earlier: decoded as a
  * card-focus step, otherwise ignored. */
 const EVENT_CARD_FOCUS_LEGACY = 7;
-/* Navigation, phone -> glasses, on EVENT_CHANNEL: the phone's panel sends the
- * same steps the head gestures make. Payload is [version, EVENT_NAV, command];
- * the glasses answer with a page-changed event. */
+/* Navigation, phone -> glasses, on EVENT_CHANNEL. Payload is
+ * [version, EVENT_NAV, command]; the glasses answer with a page-changed
+ * event. The dev navigation panel that used to send these is gone; the ids
+ * stay so an older phone build cannot be misdecoded. */
 export const EVENT_NAV = 5;
 export const NAV_PAGE_PREV = 1;
 export const NAV_PAGE_NEXT = 2;
@@ -186,15 +181,6 @@ export function decodeEvent(data) {
     if (data.length < 4) return null;
     const delta = data[3] > 127 ? data[3] - 256 : data[3];
     return { type: 'card-focus', index: data[2], delta };
-  }
-  if (data[1] === EVENT_DEBUG_GESTURE) {
-    if (data.length < 5) return null;
-    return {
-      type: 'gesture-debug',
-      gesture: data[2],
-      active: data[3] !== 0,
-      index: data[4],
-    };
   }
   return null;
 }

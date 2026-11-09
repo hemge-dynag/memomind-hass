@@ -1396,6 +1396,195 @@ function drawWeather(ctx, config, state, allStates, width = CARD_WIDTH, height =
 
 // Cards whose first entity is shown as a big value, with a bar when the config
 // carries min/max bounds (input_number, number, generic sensor rows).
+/* Statistics / Energy graph (`statistics-graph`, `energy-usage-graph`, and the
+ * plain `history-graph` that shares the same series): a time-series line (or
+ * bars) painted from the recorder data the phone fetched into `card.history`.
+ * Each series is `{ id, points: [{ t, y }] }`; a bar series (`bar_chart`,
+ * or the Energy card's `chart_type: bar`) shows its buckets as columns.
+ *
+ * The layout is the one HA's own graph card uses: title, a y-scale on the left,
+ * the plot, and the time range along the bottom. The plot is framed with the
+ * muted palette so the line reads as ink on black without competing with the
+ * value. No data is drawn as a single word rather than an empty box. */
+function prettyNumber(value) {
+  const magnitude = Math.abs(value);
+  let text;
+  if (magnitude === 0) text = '0';
+  else if (magnitude >= 1000) text = Number(value.toPrecision(3)).toLocaleString('fr-FR');
+  else if (magnitude >= 1) text = Number(value.toPrecision(3)).toString();
+  else text = Number(value.toPrecision(2)).toString();
+  return text;
+}
+
+function hourLabel(ms) {
+  const d = new Date(ms);
+  if (!Number.isFinite(d.getTime())) return '';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function dayLabel(ms) {
+  const d = new Date(ms);
+  if (!Number.isFinite(d.getTime())) return '';
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+}
+
+// Colour ramp for stacked/multi-line series, stepped so they stay distinct once
+// the GRAY_4 palette (16 levels) reduces them.
+const GRAPH_INKS = [INK, MUTED, '#9a9a9a', DIM];
+
+function drawGraph(ctx, config, card) {
+  const title = titleOf(config);
+  drawTitle(ctx, title);
+  const series = Array.isArray(card?.history) ? card.history : [];
+  const withData = series.filter((s) => Array.isArray(s.points) && s.points.length);
+
+  const top = title ? 66 : 34;
+  const bottom = CARD_HEIGHT - 40;
+  const left = 72;
+  const right = CARD_WIDTH - 24;
+  const plotW = right - left;
+  const plotH = bottom - top;
+
+  if (!withData.length) {
+    drawText(ctx, 'Pas de données', CARD_WIDTH / 2, (top + bottom) / 2, CARD_WIDTH - 80, 26,
+      { weight: '500', color: MUTED, align: 'center' });
+    return;
+  }
+
+  // Time and value bounds across every series, so shared axes are honest.
+  let tMin = Infinity;
+  let tMax = -Infinity;
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  for (const s of withData) {
+    for (const p of s.points) {
+      if (p.t < tMin) tMin = p.t;
+      if (p.t > tMax) tMax = p.t;
+      if (p.y < yMin) yMin = p.y;
+      if (p.y > yMax) yMax = p.y;
+    }
+  }
+  if (!Number.isFinite(tMin) || !Number.isFinite(yMin)) {
+    drawText(ctx, 'Pas de données', CARD_WIDTH / 2, (top + bottom) / 2, CARD_WIDTH - 80, 26,
+      { weight: '500', color: MUTED, align: 'center' });
+    return;
+  }
+  if (tMax === tMin) tMax = tMin + 1;
+  /* A single flat line (a constant reading) still gets a band to sit in: pad a
+   * zero-height range, and keep a small margin above the peak so the line never
+   * touches the top edge. A bar chart is anchored at zero. */
+  const bars = String(config?.chart_type || config?.statistics?.chart_type || '').toLowerCase().includes('bar');
+  if (bars) yMin = Math.min(0, yMin);
+  if (yMax === yMin) {
+    yMax = yMin + 1;
+  } else {
+    const pad = (yMax - yMin) * 0.08;
+    yMax += pad;
+    if (!bars) yMin -= pad;
+  }
+
+  const spanT = tMax - tMin;
+  const spanY = yMax - yMin || 1;
+  const xOf = (t) => left + ((t - tMin) / spanT) * plotW;
+  const yOf = (v) => bottom - ((v - yMin) / spanY) * plotH;
+
+  // Frame: baseline, left axis, and a faint gridline at mid-height.
+  ctx.save();
+  ctx.strokeStyle = TRACK;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(left, top);
+  ctx.lineTo(left, bottom);
+  ctx.lineTo(right, bottom);
+  ctx.stroke();
+  ctx.setLineDash([6, 8]);
+  ctx.beginPath();
+  ctx.moveTo(left, (top + bottom) / 2);
+  ctx.lineTo(right, (top + bottom) / 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // Y axis: top and bottom values.
+  drawText(ctx, prettyNumber(yMax), left - 10, top + 6, 60, 16,
+    { weight: '500', color: MUTED, align: 'right', baseline: 'middle' });
+  drawText(ctx, prettyNumber(yMin), left - 10, bottom, 60, 16,
+    { weight: '500', color: MUTED, align: 'right', baseline: 'middle' });
+
+  // X axis: a few evenly spaced labels. Inside two days they read hour:min;
+  // a longer window (a 7- or 30-day bar chart) reads day/month, matching the
+  // daily bucket so no hour-of-day leaks onto a multi-day axis.
+  const shortSpan = spanT <= 48 * 3600 * 1000;
+  const fmtT = shortSpan ? hourLabel : dayLabel;
+  const ticks = shortSpan ? 4 : 5;
+  for (let i = 0; i < ticks; i += 1) {
+    const t = tMin + (spanT * i) / (ticks - 1);
+    const align = i === 0 ? 'left' : i === ticks - 1 ? 'right' : 'center';
+    drawText(ctx, fmtT(t), xOf(t), bottom + 20, plotW / (ticks - 1) - 6, 15,
+      { weight: '400', color: DIM, align, baseline: 'middle' });
+  }
+
+  // Clip the plot so a peak cannot draw over the axis labels.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, plotW + 1, plotH + 1);
+  ctx.clip();
+
+  withData.forEach((s, si) => {
+    const ink = GRAPH_INKS[si % GRAPH_INKS.length];
+    const pts = s.points.slice().sort((a, b) => a.t - b.t);
+    if (bars) {
+      // One column per bucket, width split evenly across the window.
+      const bw = Math.max(2, Math.min(plotW / pts.length - 2, 40));
+      ctx.fillStyle = ink;
+      for (const p of pts) {
+        const x = xOf(p.t) - bw / 2;
+        const y = yOf(Math.max(0, p.y));
+        const h = Math.max(0, bottom - y);
+        if (h <= 0) continue;
+        roundRect(ctx, x, y, bw, h, 2);
+        ctx.fill();
+      }
+      return;
+    }
+    // Line: a run of segments; a single-point series becomes a dot.
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const x = xOf(p.t);
+      const y = yOf(p.y);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    if (pts.length === 1) {
+      ctx.arc(xOf(pts[0].t), yOf(pts[0].y), 4, 0, Math.PI * 2);
+      ctx.fillStyle = ink;
+      ctx.fill();
+    } else {
+      ctx.stroke();
+    }
+  });
+  ctx.restore();
+
+  // Legend lower-right when more than one line, naming each entity's tail.
+  if (withData.length > 1) {
+    let ly = top + 10;
+    withData.forEach((s, si) => {
+      const tail = String(s.id || '').split('.')[1] || String(s.id || '');
+      ctx.fillStyle = GRAPH_INKS[si % GRAPH_INKS.length];
+      roundRect(ctx, right - 150, ly - 5, 12, 10, 2);
+      ctx.fill();
+      drawText(ctx, tail.replace(/_/g, ' '), right - 132, ly, 130, 14,
+        { weight: '400', color: MUTED, align: 'left', baseline: 'middle' });
+      ly += 20;
+    });
+  }
+}
+
 function drawValue(ctx, config, state) {
   const min = config?.min ?? state?.attributes?.min;
   const max = config?.max ?? state?.attributes?.max;
@@ -2293,6 +2482,14 @@ function drawCard(ctx, rawCard, states, box = null, scroll = 0, focusId = '') {
     case 'sensor':
     case 'entity':
       drawSensor(ctx, merged, state);
+      break;
+    case 'statistics-graph':
+    case 'statistics_graph':
+    case 'energy-usage-graph':
+    case 'energy_usage_graph':
+    case 'history-graph':
+    case 'sensor-graph':
+      drawGraph(ctx, merged, card);
       break;
     case 'media-control':
     case 'media_player':

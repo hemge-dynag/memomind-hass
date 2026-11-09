@@ -6,14 +6,8 @@ import {
   MAX_ROWS,
   decodeEvent,
   encodeClear,
-  encodeNav,
   encodeSetPages,
   EVENT_CHANNEL as EVENT_CHANNEL_CONST,
-  NAV_ACTIVATE,
-  NAV_FOCUS_DOWN,
-  NAV_FOCUS_UP,
-  NAV_PAGE_NEXT,
-  NAV_PAGE_PREV,
 } from './protocol.js';
 import { detectLocale, getStrings, format } from './translations.js';
 import {
@@ -36,6 +30,9 @@ import {
   REST_DASHBOARD_ID,
   fetchEntityState,
   fetchStates,
+  fetchCardSeries,
+  energySensorIds,
+  isGraphCardType,
   attachForecasts,
   testConnection,
 } from './ha.js';
@@ -79,7 +76,6 @@ const els = {
   // main screen
   mainScreen: document.querySelector('#main-screen'),
   status: document.querySelector('#status'),
-  gestureDebug: document.querySelector('#gesture-debug'),
   syncButton: document.querySelector('#sync-button'),
   dashboardsTitle: document.querySelector('#dashboards-title'),
   dashboardsHint: document.querySelector('#dashboards-hint'),
@@ -90,15 +86,6 @@ const els = {
   cardsList: document.querySelector('#cards-list'),
   addCardButton: document.querySelector('#add-card-button'),
   glassesHint: document.querySelector('#glasses-hint'),
-  navSection: document.querySelector('#nav-section'),
-  navTitle: document.querySelector('#nav-title'),
-  navHint: document.querySelector('#nav-hint'),
-  navPrev: document.querySelector('#nav-prev'),
-  navNext: document.querySelector('#nav-next'),
-  navUp: document.querySelector('#nav-up'),
-  navDown: document.querySelector('#nav-down'),
-  navActivate: document.querySelector('#nav-activate'),
-  navState: document.querySelector('#nav-state'),
   // settings screen
   settingsScreen: document.querySelector('#settings-screen'),
   settingsTitle: document.querySelector('#settings-title'),
@@ -131,8 +118,6 @@ let glassesDashboards = []; // dashboards listed by Home Assistant (Lovelace)
  * buttons that drive the same things a gesture used to (page, row, activate).
  * The cursor mirrors what the glasses hold: the page they report, the row the
  * user moved to. */
-let navPage = 0; // page the glasses currently show
-let navRow = 0; // selected row on a text page
 const HINT_PAGE = -1; // the local "head gestures disabled" page on the glasses
 let dashboardsError = ''; // non-empty when Home Assistant could not be asked
 let remoteDashboards = new Map(); // url_path -> fetched Lovelace pages
@@ -185,25 +170,6 @@ function setStatus(text, state = '') {
   els.status.className = `status ${state}`.trim();
 }
 
-// Diagnostic 1.0.16: names of the raw gesture ids the glasses report, so the
-// wearer can read on the phone what the Host actually delivered. The ids match
-// GlassSDK/include/gm_plugin.h (gm_plugin_imu_gesture_t).
-const GESTURE_NAMES = {
-  0: 'AUCUN', 1: 'NOD', 2: 'HAUT', 3: 'BAS', 4: 'SHAKE',
-  5: 'HAUT (timeout)', 6: 'BAS (timeout)', 7: 'GAUCHE', 8: 'DROITE',
-};
-
-function showGestureDebug(gesture, active) {
-  if (!els.gestureDebug) return;
-  els.gestureDebug.hidden = false;
-  const name = GESTURE_NAMES[gesture] || '?';
-  els.gestureDebug.textContent = `GESTE BRUT : ${gesture} (${name})${active ? '' : ' · relâché'}`;
-  els.gestureDebug.classList.remove('hit');
-  // Restart the highlight so a repeated id still flashes.
-  void els.gestureDebug.offsetWidth;
-  els.gestureDebug.classList.add('hit');
-}
-
 // --- strings / i18n ---------------------------------------------------------
 
 function applyStrings() {
@@ -229,13 +195,6 @@ function applyStrings() {
   els.testButton.textContent = S.testButton;
   els.loadButton.textContent = S.loadEntities;
   els.saveSettingsButton.textContent = S.saveButton;
-  els.navTitle.textContent = S.navTitle;
-  els.navHint.textContent = S.navHint;
-  els.navPrev.textContent = S.navPrev;
-  els.navNext.textContent = S.navNext;
-  els.navUp.textContent = S.navUp;
-  els.navDown.textContent = S.navDown;
-  els.navActivate.textContent = S.navActivate;
 }
 
 // --- persistence ------------------------------------------------------------
@@ -1097,9 +1056,6 @@ async function syncPages(options = {}) {
      * `page.image` any more. Filtering on `.image` emptied this list and no
      * card picture was ever pushed. */
     imagePages = pages.filter((page) => page.card);
-    navPage = 0;
-    navRow = 0;
-    navShowState();
     if (refreshOnly) refreshCardImages();
     else requestAllCardImages();
   } catch (error) {
@@ -1123,150 +1079,6 @@ async function pushToGlasses(pages) {
   await gm.plugin.sendMessage(PAGES_CHANNEL, payload);
   const titles = pages.slice(0, 3).map((p) => p.title).join(', ');
   setStatus(format(S.statusPushed, { n: pages.length, titles }), 'ready');
-}
-
-// --- debug navigation --------------------------------------------------------
-
-/* Why this exists: the glasses run with head gestures disabled while we debug
- * "only entities show", so nothing on the device can change page. The phone
- * therefore shows buttons that do what a gesture used to do, and reads the
- * resulting state from the events the glasses already send.
- *
- * Page arrows republish the dashboard starting at the next card. The glasses'
- * own page list is fixed at sync time, so rotating it is the only way to land
- * on another page from the phone. Row up/down and Action act on the page the
- * glasses report, which is the one the wearer is looking at. */
-
-function navTotalPages() {
-  return Math.min(Math.max(config.pages.length, 0), MAX_PAGES);
-}
-
-/* What the arrows really work on: the glasses' own page list, as built by the
- * last sync. A dashboard sent by the Home Assistant integration is not in
- * config.pages (that only holds the local cards), so counting config.pages said
- * "1 page" and the arrows did nothing. `pushedPages` is the list actually sent,
- * text pages included, so page N here is page N on the glasses. */
-function navList() {
-  return pushedPages.length ? pushedPages : [];
-}
-
-function navTitleOf(entry) {
-  if (!entry) return S.navUntitled;
-  const title = entry.title || entry.card?.title || entry.card?.config?.name || '';
-  return String(title).trim() || S.navUntitled;
-}
-
-/* The glasses land on page 0 after every set_pages, so the phone's cursor for
- * the arrows is the index into the list it last pushed. `navPage` follows the
- * page-changed events from there. */
-function navShowState() {
-  if (!els.navState) return;
-  const list = navList();
-  if (!list.length) {
-    els.navState.textContent = navTotalPages() ? S.navNoSync : S.navNoPages;
-    return;
-  }
-  /* The glasses report the page through page-changed; their index is the
-   * truth. The picture list is only a fallback title: a text page may be on
-   * screen while this list skips it, so never label the row from it when the
-   * indexes disagree. */
-  const total = Math.max(list.length, navTotalPages(), (navPage || 0) + 1);
-  const at = Math.min(Math.max(navPage, 0), total - 1);
-  const entry = at < list.length ? list[at] : null;
-  const rows = totalNavRows(at);
-  const state = format(S.navState, {
-    n: at + 1, total, title: navTitleOf(entry), row: navRow + 1,
-  });
-  if (rows > 0) {
-    els.navState.textContent = state;
-    return;
-  }
-  /* A card picture with triggerable entities shows which one the ring sits on,
-   * so the wearer knows what the glasses' button will do. */
-  const focus = entry?.card ? focusList(entry.card) : [];
-  if (focus.length) {
-    const pos = Math.min(Math.max(cardFocus.get(at) || 0, 0), focus.length - 1);
-    els.navState.textContent = `${state} · ${S.navPicture} · ${format(S.navFocus, {
-      name: labelForEntity(focus[pos]), n: pos + 1, total: focus.length,
-    })}`;
-    return;
-  }
-  els.navState.textContent = `${state} · ${S.navPicture}`;
-}
-
-/* Rows the glasses hold for a page: the pushed list is the only source, and a
- * page missing from it is a picture page (the one that gets pushed). */
-function totalNavRows(at) {
-  if (Array.isArray(pushedPages)) {
-    const page = pushedPages[at];
-    if (page) return Array.isArray(page.rows) ? page.rows.length : 0;
-  }
-  const entry = navList()[at];
-  return Array.isArray(entry?.rows) ? entry.rows.length : 0;
-}
-
-/* Nav commands are handled on the device: they call exactly the code the head
- * gestures used to, so a page turn there is the same page turn the wearer saw
- * before. Republishing the page list from here looked simpler but never moved
- * the glasses (an integration dashboard is not in config.pages at all), so the
- * arrows did nothing. */
-async function sendNav(command) {
-  if (!connected) { setStatus(S.statusDisconnected, 'error'); return; }
-  const payload = encodeNav(command);
-  try {
-    await gm.plugin.sendMessage(EVENT_CHANNEL, payload);
-  } catch (error) {
-    setStatus(format(S.statusError, { msg: describeHaError(error) }), 'error');
-  }
-  navShowState();
-}
-
-async function navRotate(step) {
-  if (navList().length < 2) {
-    setStatus(S.navNeedsSync, 'error');
-    navShowState();
-    return;
-  }
-  await sendNav(step > 0 ? NAV_PAGE_NEXT : NAV_PAGE_PREV);
-}
-
-function navEntryRows(entry) {
-  return Array.isArray(entry?.rows) ? entry.rows : [];
-}
-
-async function navUpDown(delta) {
-  const list = navList();
-  if (!list.length) { navShowState(); return; }
-  const at = Math.min(Math.max(navPage, 0), list.length - 1);
-  const entry = list[at];
-  /* A card picture with triggerable entities: the arrows step the ring on the
-   * phone itself. The glasses do not hold the entity list, so borrowing their
-   * row cursor (the old pan path) could not name a tile; the cursor lives here
-   * and the ring is painted into the frame this phone pushes. */
-  if (entry?.card && focusList(entry.card).length) {
-    focusCardImage(delta);
-    return;
-  }
-  /* A card picture without actionable entities has no ring to step: it is
-   * left alone, exactly like the head gesture on the glasses. */
-  if (entry?.card) { navShowState(); return; }
-  if (!navEntryRows(entry).length) { navShowState(); return; }
-  await sendNav(delta < 0 ? NAV_FOCUS_UP : NAV_FOCUS_DOWN);
-}
-
-async function navActivate() {
-  const list = navList();
-  if (!list.length) { navShowState(); return; }
-  const at = Math.min(Math.max(navPage, 0), list.length - 1);
-  const entry = list[at];
-  /* A card picture is triggered from the phone too: run the focused entity
-   * straight away, no round trip through the glasses. */
-  if (entry?.card && focusedEntity(entry.card)) {
-    await activateFocus();
-    return;
-  }
-  if (!navEntryRows(entry).length) return;
-  await sendNav(NAV_ACTIVATE);
 }
 
 /* Steps the card cursor by `delta`, wraps at the ends so the wearer never gets
@@ -1295,7 +1107,6 @@ function focusCardImage(delta) {
     if (start !== (cardScroll.get(picture) || 0)) cardScroll.set(picture, start);
   }
   rerenderCard();
-  navShowState();
 }
 
 /* Head up/down from the glasses: step the ring of the card shown there by
@@ -1365,10 +1176,16 @@ async function sharedStates() {
     } catch {
       states = entitiesCache;
     }
+    let enriched;
     try {
-      return await attachForecasts(config.url, config.token, states);
+      enriched = await attachForecasts(config.url, config.token, states);
     } catch {
-      return states;
+      enriched = states;
+    }
+    try {
+      return await attachCardSeries(enriched);
+    } catch {
+      return enriched;
     }
   })();
   try {
@@ -1379,13 +1196,58 @@ async function sharedStates() {
 }
 
 async function cardStates(card, hint = null) {
-  const ids = cardEntityIds(card);
   /* `states` may be handed over: a scroll renders another window of the very
    * same card, and the values it is drawn from did not change between two head
    * movements. Only a fresh request fetches them. */
-  if (hint) return hint;
+  const ids = cardEntityIds(card);
+  if (hint) {
+    if (ids.length === 0) return hint;
+    if (graphSeries && graphSeries.has(card)) return hint;
+  }
   if (ids.length === 0) return entitiesCache;
   return sharedStates();
+}
+
+/* Graph cards (`statistics-graph`, `energy-usage-graph`, `history-graph`) draw a
+ * time series that the states map cannot carry: it is fetched on demand from
+ * HA's recorder, attached to the card as `card.history`, and reused until the
+ * values are older than the same TTL a card snapshot lives by. Keyed by the
+ * card object itself, so a dashboard rebuild (new card objects) refetches. */
+const GRAPH_TTL_MS = 60000;
+const graphSeries = new WeakMap(); // card -> { at, promise }
+
+function cardGraphType(card) {
+  const type = String(card?.cardtype || card?.config?.type || '').toLowerCase();
+  return isGraphCardType(type) ? type : '';
+}
+
+function withGraphSeries(card) {
+  const type = cardGraphType(card);
+  if (!type) return card;
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const known = graphSeries.get(card);
+  if (known && now - known.at < GRAPH_TTL_MS) return known.promise;
+  const cardConfig = card?.config && typeof card.config === 'object' ? card.config : {};
+  /* The Energy card usually names no entity: hand the recorder the energy
+   * sensors this instance carries, so it still has something to plot. */
+  const fallback = /energy/.test(type) ? energySensorIds(entitiesCache) : [];
+  const promise = fetchCardSeries(config.url, config.token, cardConfig, type, fallback)
+    .catch(() => []).then((series) => ({ ...card, history: series }));
+  graphSeries.set(card, { at: now, promise });
+  return promise;
+}
+
+async function attachCardSeries(states) {
+  if (!imagePages.length || !imagePages.some((page) => cardGraphType(page.card))) return states;
+  await Promise.all(imagePages
+    .filter((page) => cardGraphType(page.card))
+    .map((page) => withGraphSeries(page.card).catch(() => null)));
+  return states;
+}
+
+async function resolveCard(card) {
+  if (!cardGraphType(card)) return card;
+  return await withGraphSeries(card);
 }
 
 /* Pictures the phone has already rendered, kept so a page can be put on the
@@ -1561,11 +1423,14 @@ async function pushCardImage(card, index, cached = false, scroll = false,
   const previous = frameCache.get(index);
   const states = statesHint || (scroll ? previous?.states || null : null)
     || await cardStates(card);
+  /* A graph card is painted from its recorder series, not from the states map:
+   * resolve the series now, then sign and draw the resolved card. */
+  const resolved = await resolveCard(card);
   /* `focusId === null` means "not a focus repaint": use the cursor as it stands
    * for this page so a plain reload keeps the ring where the wearer left it. */
   const focus = focusId !== null ? focusId : (pushedPages[page] && pushedPages[page].card
     ? focusedEntity(pushedPages[page].card) : '');
-  const signature = cardSignature(card, index, wanted, states, focus);
+  const signature = cardSignature(resolved, index, wanted, states, focus);
   /* A picture the phone believes it sent is not on the glasses any more (a
    * sync clears it, the screen may have been rebuilt): every explicit request,
    * and every dashboard sync, pushes the pixels again. Only the automatic
@@ -1574,7 +1439,7 @@ async function pushCardImage(card, index, cached = false, scroll = false,
   // The wearer may have moved on while the states were being fetched.
   if (index !== pictureIndexAt(visiblePage)) return;
   const frame = cachedFrame(index, signature)
-    || renderCardFrame(card, states, wanted, focus);
+    || renderCardFrame(resolved, states, wanted, focus);
   const renderedAt = frame && cachedFrame(index, signature) === frame
     ? frameCache.get(index)?.at : undefined;
   if (!frame || !frame.length) {
@@ -1638,10 +1503,11 @@ async function warmPrefetchQueue() {
     } catch {
       continue;
     }
-    const signature = cardSignature(page.card, index, offset, states);
+    const resolved = await resolveCard(page.card).catch(() => page.card);
+    const signature = cardSignature(resolved, index, offset, states);
     const known = frameCache.get(index);
     if (known && known.signature === signature) continue;
-    cacheFrame(index, signature, renderCardFrame(page.card, states, offset),
+    cacheFrame(index, signature, renderCardFrame(resolved, states, offset),
       offset, states);
   }
 }
@@ -1668,8 +1534,8 @@ function firstCardEntity(card) {
 }
 
 /* The card on the glasses right now, or null when it shows a text page. `at` is
- * the glasses page index (navPage / visiblePage), which is what the arrows and
- * the glasses' button report. */
+ * the glasses page index (visiblePage), which is what the glasses' button
+ * reports. */
 function currentCard() {
   const at = pushedPages[visiblePage];
   return at && at.card ? at.card : null;
@@ -1919,11 +1785,6 @@ els.loadButton.addEventListener('click', () => void onLoadEntities());
 els.syncButton.addEventListener('click', () => void syncPages());
 els.refreshDashboardsButton.addEventListener('click', () => void refreshDashboards());
 els.addCardButton.addEventListener('click', addCard);
-if (els.navPrev) els.navPrev.addEventListener('click', () => void navRotate(-1));
-if (els.navNext) els.navNext.addEventListener('click', () => void navRotate(1));
-if (els.navUp) els.navUp.addEventListener('click', () => void navUpDown(-1));
-if (els.navDown) els.navDown.addEventListener('click', () => void navUpDown(1));
-if (els.navActivate) els.navActivate.addEventListener('click', () => void navActivate());
 
 // Reordering the cards rewrites config.pages from the new DOM order.
 attachSortable(els.cardsList, (container) => {
@@ -1938,13 +1799,6 @@ const offMessages = gm.plugin.onMessage((message) => {
   if (event.type === 'action') void onAction(event.action);
   if (event.type === 'page-changed') {
     showPage(event.index);
-    if (event.index !== HINT_PAGE) {
-      /* Row-up/down must not reset the cursor: the glasses echo their page on
-       * every nav command, so a reset here would undo the step just taken. */
-      if (event.index !== navPage) navRow = 0;
-      navPage = event.index;
-    }
-    navShowState();
   }
   if (event.type === 'request-card') requestCardImage(event.index, false, event.offset ?? null);
   if (event.type === 'scroll-card') scrollCardImage(event.index, event.delta);
@@ -1957,7 +1811,6 @@ const offMessages = gm.plugin.onMessage((message) => {
    * here, so the phone moves it and repaints just that card. The glasses name
    * the page they are on so a stale message cannot move another card. */
   if (event.type === 'card-focus') focusHeaderCard(event.index, event.delta);
-  if (event.type === 'gesture-debug') showGestureDebug(event.gesture, event.active);
 });
 
 // Runs the action of the row selected on the glasses: calls the matching Home
@@ -2032,7 +1885,6 @@ function refreshActedCard(entityId) {
    * `entitiesCache`, which now holds the value HA just published. */
   if (known) frameCache.delete(picture);
   rerenderCard();
-  navShowState();
   /* The other cards drawn from the same values (a dashboard can show one
    * entity twice) are stale now: rebuild their frames in the background. */
   precacheAllCards();
@@ -2046,7 +1898,6 @@ async function start() {
     renderCards();
     renderDashboards();
     showMain();
-    navShowState();
     const info = await gm.device.getInfo();
     connected = Boolean(info.connected);
     setStatus(connected ? S.statusConnected : S.statusDisconnected, connected ? 'ready' : 'error');
