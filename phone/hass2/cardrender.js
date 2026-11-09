@@ -614,7 +614,8 @@ function num(value, fallback) {
 
 function drawTitle(ctx, title) {
   if (!title) return;
-  drawText(ctx, title, 28, 36, CARD_WIDTH - 56, 22, { weight: '700', color: INK });
+  drawText(ctx, title, CARD_WIDTH / 2, 22, CARD_WIDTH - 64, 18,
+    { weight: '700', color: INK, align: 'center' });
 }
 
 /* Head of an entity tile: the friendly_name a HA entity carries defaults to its
@@ -1440,10 +1441,10 @@ function drawGraph(ctx, config, card) {
   const series = Array.isArray(card?.history) ? card.history : [];
   const withData = series.filter((s) => Array.isArray(s.points) && s.points.length);
 
-  const top = title ? 66 : 34;
-  const bottom = CARD_HEIGHT - 40;
-  const left = 72;
-  const right = CARD_WIDTH - 24;
+  const top = title ? 44 : 20;
+  const bottom = CARD_HEIGHT - 46;
+  const left = 44;
+  const right = CARD_WIDTH - 16;
   const plotW = right - left;
   const plotH = bottom - top;
 
